@@ -3,6 +3,10 @@ Prompt组装服务 - 对标Java的RagPromptAssemblyService
 """
 from typing import Dict, Any, List
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class RagPromptAssemblyService:
     """RAG Prompt组装服务"""
@@ -20,7 +24,7 @@ class RagPromptAssemblyService:
         sub_questions = retrieval_context.sub_question_evidence_list
         references = retrieval_context.flatten_references()
 
-        print(f"[PROMPT] sub_questions count: {len(sub_questions)}, references count: {len(references)}")
+        logger.info(f"[PROMPT] sub_questions count: {len(sub_questions)}, references count: {len(references)}")
 
         # 构建引用
         ref_idx = 1
@@ -68,7 +72,7 @@ class RagPromptAssemblyService:
 3. 如果无法回答，明确说明
 """
 
-        print(f"[PROMPT] Assembled - system_prompt: {len(system_prompt)} chars, user_prompt: {len(user_prompt)} chars, evidence: {len(all_evidence)} chars")
+        logger.info(f"[PROMPT] Assembled - system_prompt: {len(system_prompt)} chars, user_prompt: {len(user_prompt)} chars, evidence: {len(all_evidence)} chars")
 
         return {
             "system_prompt": system_prompt,

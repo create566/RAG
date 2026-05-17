@@ -7,6 +7,11 @@ import asyncio
 import os
 
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+
 class BaseLLMService:
     """LLM服务基类"""
 
@@ -29,7 +34,7 @@ class DashScopeLLMService(BaseLLMService):
         self.embedding_available = True
         # 从环境变量读取 embedding 模型
         self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-v1")
-        print(f"[EMBED] Using model: {self.embedding_model}")
+        logger.info(f"Using embedding model: {self.embedding_model}")
 
     async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
         """调用DashScope API"""
@@ -95,12 +100,12 @@ class DashScopeLLMService(BaseLLMService):
                         return embeds[0]["embedding"]
                     return []
                 else:
-                    print(f"Embedding API错误 (attempt {attempt+1}/{max_retries}): {response.message}")
+                    logger.warning(f"Embedding API error (attempt {attempt+1}/{max_retries}): {response.message}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(base_delay * (2 ** attempt))
                     continue
             except Exception as e:
-                print(f"Embedding失败 (attempt {attempt+1}/{max_retries}): {e}")
+                logger.warning(f"Embedding failed (attempt {attempt+1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(base_delay * (2 ** attempt))
                 continue
@@ -108,8 +113,8 @@ class DashScopeLLMService(BaseLLMService):
         self._embedding_failure_count += 1
         if self._embedding_failure_count >= 3:
             self.embedding_available = False
-            print(f"[WARN] Embedding 已连续失败 {self._embedding_failure_count} 次，向量检索已禁用，将仅使用关键词检索")
-        print(f"Embedding全部 {max_retries} 次重试失败")
+            logger.warning(f"Embedding failed {self._embedding_failure_count} consecutive times, vector search disabled, keyword search only")
+        logger.error(f"Embedding all {max_retries} retries failed")
         return []
 
 
@@ -161,7 +166,7 @@ class OpenAILLMService(BaseLLMService):
 
             return response.data[0].embedding
         except Exception as e:
-            print(f"Embedding失败: {e}")
+            logger.error(f"Embedding failed: {e}")
             return []
 
 

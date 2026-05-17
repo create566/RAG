@@ -8,6 +8,10 @@ from minio.error import S3Error
 import io
 import os
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class MinioClient:
     """MinIO 对象存储客户端"""
@@ -39,7 +43,7 @@ class MinioClient:
                 self.client.make_bucket(self.bucket)
             return True
         except S3Error as e:
-            print(f"MinIO bucket error: {e}")
+            logger.error( bucket error: {e}")
             return False
 
     def upload_file(self, object_name: str, file_path: str, content_type: str = "application/octet-stream") -> Optional[str]:
@@ -65,7 +69,7 @@ class MinioClient:
             # 返回对象路径
             return f"{self.bucket}/{object_name}"
         except S3Error as e:
-            print(f"MinIO upload error: {e}")
+            logger.error( upload error: {e}")
             return None
 
     def upload_bytes(self, object_name: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
@@ -91,7 +95,7 @@ class MinioClient:
             )
             return f"{self.bucket}/{object_name}"
         except S3Error as e:
-            print(f"MinIO upload error: {e}")
+            logger.error( upload error: {e}")
             return None
 
     def download_file(self, object_name: str, file_path: str) -> bool:
@@ -100,7 +104,7 @@ class MinioClient:
             self.client.fget_object(self.bucket, object_name, file_path)
             return True
         except S3Error as e:
-            print(f"MinIO download error: {e}")
+            logger.error( download error: {e}")
             return False
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> Optional[str]:
@@ -108,7 +112,7 @@ class MinioClient:
         try:
             return self.client.presigned_get_object(self.bucket, object_name, expires)
         except S3Error as e:
-            print(f"MinIO presigned URL error: {e}")
+            logger.error( presigned URL error: {e}")
             return None
 
     def delete_file(self, object_name: str) -> bool:
@@ -117,7 +121,7 @@ class MinioClient:
             self.client.remove_object(self.bucket, object_name)
             return True
         except S3Error as e:
-            print(f"MinIO delete error: {e}")
+            logger.error( delete error: {e}")
             return False
 
     def list_files(self, prefix: str = "") -> list:
@@ -126,7 +130,7 @@ class MinioClient:
             objects = self.client.list_objects(self.bucket, prefix=prefix)
             return [obj.object_name for obj in objects]
         except S3Error as e:
-            print(f"MinIO list error: {e}")
+            logger.error( list error: {e}")
             return []
 
 

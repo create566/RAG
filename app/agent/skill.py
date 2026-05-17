@@ -4,6 +4,9 @@ Skills 能力扩展
 """
 from typing import List, Dict, Any, Optional, Callable
 from app.models.tool import Skill
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class SkillManager:
@@ -16,12 +19,12 @@ class SkillManager:
     def register_skill(self, skill: Skill):
         """注册技能"""
         self._skills[skill.name] = skill
-        print(f"[SKILL] Registered skill: {skill.name}")
+        logger.info(f"[SKILL] Registered skill: {skill.name}")
 
     def register_tool(self, name: str, func: Callable):
         """注册工具函数"""
         self._tool_registry[name] = func
-        print(f"[SKILL] Registered tool: {name}")
+        logger.info(f"[SKILL] Registered tool: {name}")
 
     def get_skill(self, name: str) -> Optional[Skill]:
         """获取技能"""

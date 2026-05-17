@@ -5,6 +5,10 @@ Neo4j 图数据库客户端封装
 from typing import Dict, List, Optional, Any
 from neo4j import GraphDatabase
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class Neo4jClient:
     """Neo4j 图数据库客户端封装"""
@@ -163,7 +167,7 @@ class Neo4jClient:
             })
             return bool(results)
         except Exception as e:
-            print(f"Neo4j create_document_node error: {e}")
+            logger.error(f"Neo4j create_document_node error: {e}")
             return False
 
     def create_chapter_relationship(self, document_id: int, chapter_title: str, chapter_content: str = "") -> bool:

@@ -6,6 +6,9 @@ import httpx
 from typing import List, Dict, Any, Optional
 import json
 from app.models.tool import MCPTool, MCPManifest
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MCPToolProvider:
@@ -60,11 +63,11 @@ class MCPToolProvider:
                         self._tool_to_server[mcp_tool.name] = server_endpoint
                         discovered.append(mcp_tool)
 
-                    print(f"[MCP] Discovered {len(discovered)} tools from {server_endpoint}")
+                    logger.info(f"[MCP] Discovered {len(discovered)} tools from {server_endpoint}")
                     return discovered
 
         except Exception as e:
-            print(f"[MCP] Failed to discover tools from {server_endpoint}: {e}")
+            logger.info(f"[MCP] Failed to discover tools from {server_endpoint}: {e}")
 
         return []
 
@@ -103,7 +106,7 @@ class MCPToolProvider:
             endpoint=endpoint
         )
         self._manifests[endpoint] = manifest
-        print(f"[MCP] Added server: {name or endpoint}")
+        logger.info(f"[MCP] Added server: {name or endpoint}")
 
     async def discover_all_servers(self) -> List[MCPTool]:
         """发现所有服务器上的工具"""

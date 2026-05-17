@@ -6,6 +6,10 @@ from pathlib import Path
 import re
 import math
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class ChunkStrategy:
     """切块策略"""
@@ -232,7 +236,7 @@ class ChunkStrategy:
                         else:
                             all_chunks.append(part)
             except Exception as e:
-                print(f"[LLM CHUNK] LLM切块失败: {e}，降级为语义分块")
+                logger.warning(f"[LLM CHUNK] LLM切块失败: {e}，降级为语义分块")
                 all_chunks.extend(ChunkStrategy.semantic_chunk(coarse, max_chunk_size=max_chunk_size))
 
         return all_chunks if all_chunks else [text]

@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import math
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class RetrievalResult:
@@ -145,10 +149,10 @@ class KeywordRetrievalChannel:
     def retrieve(self, query: str, document_ids: List[str] = None, top_k: int = 10) -> List[RetrievalResult]:
         """检索相关文档"""
         if not self._indexed or not query:
-            print(f"[KEYWORD] 未索引或查询为空: indexed={self._indexed}, query={query}")
+            logger.info(f"[KEYWORD] 未索引或查询为空: indexed={self._indexed}, query={query}")
             return []
 
-        print(f"[KEYWORD] 查询: {query}, 文档数: {len(self._document_chunks)}")
+        logger.info(f"[KEYWORD] 查询: {query}, 文档数: {len(self._document_chunks)}")
 
         # 计算所有文档的BM25分数
         scores = []
@@ -168,7 +172,7 @@ class KeywordRetrievalChannel:
         results = []
         min_score = self.config.get("min_keyword_score", 0.1)
 
-        print(f"[KEYWORD] BM25得分: {len(scores)} 个文档有得分, top: {scores[:3] if scores else []}")
+        logger.info(f"[KEYWORD] BM25得分: {len(scores)} 个文档有得分, top: {scores[:3] if scores else []}")
         for i, score in scores[:top_k]:
             if score < min_score:
                 continue
@@ -184,7 +188,7 @@ class KeywordRetrievalChannel:
                 metadata=self._metadata_map.get(chunk_id, {})
             ))
 
-        print(f"[KEYWORD] 返回结果: {len(results)} 条")
+        logger.info(f"[KEYWORD] 返回结果: {len(results)} 条")
         return results
 
 
@@ -259,7 +263,7 @@ class HybridRetrievalChannel:
                         "metadata": meta
                     })
             except Exception as e:
-                print(f"向量检索失败: {e}")
+                logger.info(f"向量检索失败: {e}")
 
         # 关键词检索
         if self.keyword_channel:
@@ -270,7 +274,7 @@ class HybridRetrievalChannel:
                     top_k=top_k * 2
                 )
             except Exception as e:
-                print(f"关键词检索失败: {e}")
+                logger.info(f"关键词检索失败: {e}")
 
         # RRF融合
         if vector_results or keyword_results:

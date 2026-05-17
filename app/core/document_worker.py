@@ -8,6 +8,10 @@ from typing import Optional
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 from app.documents.processor import DocumentProcessor, TextSplitter
 from app.core.chroma_client import create_vector_store
 from app.core.llm_service import create_llm_service
@@ -50,7 +54,7 @@ class DocumentWorker:
             )
             return consumer
         except KafkaError as e:
-            print(f"Kafka consumer error: {e}")
+            logger.error(f"Kafka consumer error: {e}")
             return None
 
     async def process_document(self, document_id: str, file_name: str, file_path: str, metadata: dict = None):
@@ -63,7 +67,7 @@ class DocumentWorker:
             file_path: MinIO 文件路径
             metadata: 元数据
         """
-        print(f"Processing document: {document_id}, file: {file_name}")
+        logger.error(f"Processing document: {document_id}, file: {file_name}")
 
         try:
             # 1. 从 MinIO 下载文件
@@ -71,13 +75,13 @@ class DocumentWorker:
             os.makedirs("./data/temp", exist_ok=True)
 
             if not self.minio_client.download_file(file_path, local_path):
-                print(f"Failed to download from MinIO: {file_path}")
+                logger.error(f"Failed to download from MinIO: {file_path}")
                 return False
 
             # 2. 解析文档
             text = await self.processor.parse_document(local_path)
             if not text or text.startswith("解析失败"):
-                print(f"Failed to parse document: {text}")
+                logger.error(f"Failed to parse document: {text}")
                 return False
 
             # 3. 切分文本
@@ -123,22 +127,22 @@ class DocumentWorker:
             if os.path.exists(local_path):
                 os.remove(local_path)
 
-            print(f"Document processed successfully: {document_id}, chunks: {len(chunk_ids)}")
+            logger.error(f"Document processed successfully: {document_id}, chunks: {len(chunk_ids)}")
             return True
 
         except Exception as e:
-            print(f"Document processing error: {e}")
+            logger.error(f"Document processing error: {e}")
             import traceback
             traceback.print_exc()
             return False
 
     async def run(self):
         """运行 Worker"""
-        print("Document Worker started")
+        logger.error("Document Worker started")
         self._consumer = self._create_consumer()
 
         if self._consumer is None:
-            print("Failed to create Kafka consumer, exiting")
+            logger.error("Failed to create Kafka consumer, exiting")
             return
 
         try:
@@ -152,7 +156,7 @@ class DocumentWorker:
                         metadata=data.get("metadata")
                     )
         except KeyboardInterrupt:
-            print("Document Worker stopped")
+            logger.error("Document Worker stopped")
         finally:
             if self._consumer:
                 self._consumer.close()

@@ -3,6 +3,10 @@ SiliconFlow Rerank 服务
 """
 from typing import List, Dict, Any
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class SiliconFlowRerankService:
     """SiliconFlow Rerank 服务"""
@@ -76,7 +80,7 @@ class SiliconFlowRerankService:
 
                     return reranked
                 else:
-                    print(f"[RERANK] 请求失败: {response.status_code}")
+                    logger.warning(f"[RERANK] 请求失败: {response.status_code}")
                     # 失败时也转换为 dict，保持类型一致
                     reranked = []
                     for r in results[:top_k]:
@@ -88,7 +92,7 @@ class SiliconFlowRerankService:
                     return reranked
 
         except Exception as e:
-            print(f"[RERANK] 错误: {e}")
+            logger.warning(f"[RERANK] 错误: {e}")
             return results[:top_k]
 
 

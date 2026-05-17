@@ -178,9 +178,8 @@ class ChatService:
 
     async def chat(self, request):
         """处理聊天请求"""
-        from app.models.chat import ChatResponse, SourceReference
-        from app.agent import ClarificationExecutor, AgentExecutor, ExecutionMode
-        from app.rag import ExecutionMode as RagExecutionMode
+        from app.models.chat import ChatResponse, SourceReference, ExecutionMode
+        from app.agent import ClarificationExecutor, AgentExecutor
 
         logger.info(f"CHAT: question={request.question}, mode={request.chat_mode}")
 
@@ -202,7 +201,7 @@ class ChatService:
             plan = await self.orchestrator.prepare(task_info)
             logger.debug(f"Plan mode: {plan.mode}")
 
-            if plan.mode == RagExecutionMode.CLARIFICATION:
+            if plan.mode == ExecutionMode.CLARIFICATION:
                 executor = ClarificationExecutor(self.llm_service)
                 result = await executor.execute({
                     "question": plan.original_question,
@@ -210,7 +209,7 @@ class ChatService:
                     "clarification_options": plan.clarification_options,
                 })
 
-            elif plan.mode == RagExecutionMode.REACT_AGENT:
+            elif plan.mode == ExecutionMode.REACT_AGENT:
                 executor = AgentExecutor(self.react_agent)
                 memory_context = await self.memory_service.load_memory_context(
                     conversation_id, request.user_id
@@ -258,13 +257,12 @@ class ChatService:
 
     async def _handle_rag_mode(self, plan, user_id: int):
         """处理 RAG 检索模式"""
-        from app.agent import ExecutionMode
-        from app.rag import ExecutionMode as RagExecutionMode
+        from app.models.chat import ExecutionMode
 
         retrieval_context = None
         answer = ""
 
-        if plan.navigation_decision and plan.navigation_decision.execution_mode == RagExecutionMode.GRAPH_THEN_EVIDENCE:
+        if plan.navigation_decision and plan.navigation_decision.execution_mode == ExecutionMode.GRAPH_THEN_EVIDENCE:
             graph_data = plan.navigation_decision.structure_anchor.get("graph_data", {}) if plan.navigation_decision.structure_anchor else {}
 
             if graph_data.get("status") == "success":

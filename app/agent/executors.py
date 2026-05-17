@@ -5,15 +5,9 @@
 from typing import List, Dict, Any, Optional, AsyncIterator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
 import asyncio
 
-
-class ExecutionMode(Enum):
-    """执行模式"""
-    CLARIFICATION = "clarification"
-    RETRIEVAL = "retrieval"
-    REACT_AGENT = "react_agent"
+from app.models.chat import ExecutionMode  # 统一从 models 导入
 
 
 @dataclass

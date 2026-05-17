@@ -8,6 +8,10 @@ import os
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class KafkaClient:
     """Kafka 消息队列客户端"""
@@ -30,7 +34,7 @@ class KafkaClient:
                     retries=3
                 )
             except KafkaError as e:
-                print(f"Kafka producer error: {e}")
+                logger.error(f"Kafka producer error: {e}")
                 return None
         return self._producer
 
@@ -47,7 +51,7 @@ class KafkaClient:
         """
         try:
             if self.producer is None:
-                print("Kafka producer not available")
+                logger.warning("Kafka producer not available")
                 return False
 
             future = self.producer.send(
@@ -59,7 +63,7 @@ class KafkaClient:
             future.get(timeout=10)
             return True
         except KafkaError as e:
-            print(f"Kafka send error: {e}")
+            logger.error(f"Kafka send error: {e}")
             return False
 
     def send_document_upload_event(self, document_id: str, file_name: str, file_path: str, metadata: Dict[str, Any] = None) -> bool:
@@ -103,5 +107,5 @@ def create_kafka_client(config: dict = None) -> Optional[KafkaClient]:
     try:
         return KafkaClient(bootstrap_servers, topic)
     except Exception as e:
-        print(f"Kafka client creation error: {e}")
+        logger.error(f"Kafka client creation error: {e}")
         return None

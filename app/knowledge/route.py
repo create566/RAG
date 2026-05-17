@@ -2,7 +2,8 @@
 文档路由服务 - 对标Java的DocumentQuestionRouter
 """
 from typing import Dict, Any, Optional
-from app.rag.orchestrator import DocumentNavigationDecision, ExecutionMode, RetrievalQuestionPlan
+from app.rag.orchestrator import DocumentNavigationDecision, RetrievalQuestionPlan
+from app.models.chat import ExecutionMode
 
 
 class DocumentQuestionRouter:

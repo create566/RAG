@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import asyncio
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class RetrievalResult:
@@ -86,7 +90,7 @@ class VectorRetrievalChannel:
             else:
                 # 只有整数 ID 或空列表, 说明是通过 int(doc_id[:8], 16) 转换来的
                 # 这种格式无法匹配 Chroma 中的 UUID 字符串, 跳过过滤以查询所有文档
-                print(f"[VECTOR] document_ids contains no UUID strings (only ints or empty) - querying all documents")
+                logger.info(f"[VECTOR] document_ids contains no UUID strings (only ints or empty) - querying all documents")
                 where_filter = {}
 
         # 添加用户过滤（多用户隔离）
@@ -179,9 +183,9 @@ class KeywordRetrievalChannel:
                 search_body["query"]["bool"]["filter"] = [
                     {"terms": {"document_id": uuid_ids}}
                 ]
-                print(f"[KEYWORD] Filter by UUIDs: {uuid_ids}")
+                logger.info(f"[KEYWORD] Filter by UUIDs: {uuid_ids}")
             else:
-                print(f"[KEYWORD] document_ids contains no UUID strings - querying all documents, document_ids={document_ids}")
+                logger.info(f"[KEYWORD] document_ids contains no UUID strings - querying all documents, document_ids={document_ids}")
 
         # 添加用户过滤
         if user_id is not None:
@@ -346,7 +350,7 @@ class EvidenceBudgetController:
                     results[0]["content"] = compressed
                 return results[:1], True
             except Exception as e:
-                print(f"[BUDGET] Semantic compression failed, fallback to truncation: {e}")
+                logger.info(f"[BUDGET] Semantic compression failed, fallback to truncation: {e}")
 
         # 回退到句子边界截断
         return self.control(results), True
@@ -397,7 +401,7 @@ class SemanticCompressor:
             # 如果压缩结果仍然太长，再次截断
             return compressed[:max_length] + "..." if compressed else context[:max_length] + "..."
         except Exception as e:
-            print(f"[SEMANTIC COMPRESS] Error: {e}")
+            logger.info(f"[SEMANTIC COMPRESS] Error: {e}")
             # 失败时回退到原内容截断
             return context[:max_length] + "..."
 
@@ -454,7 +458,7 @@ class RagRetrievalEngine:
 
             vector_results, keyword_results = await asyncio.gather(vector_task, keyword_task)
 
-            print(f"[RETRIEVAL] sub_q={sub_q}, vector_results={len(vector_results)}, keyword_results={len(keyword_results)}")
+            logger.info(f"[RETRIEVAL] sub_q={sub_q}, vector_results={len(vector_results)}, keyword_results={len(keyword_results)}")
 
             if vector_results:
                 used_channels.add("vector")
@@ -472,9 +476,9 @@ class RagRetrievalEngine:
 
             # 可选的Rerank
             if self.rerank_service and aggregated_results:
-                print(f"[RERANK] Calling rerank service with {len(aggregated_results)} results")
+                logger.info(f"[RERANK] Calling rerank service with {len(aggregated_results)} results")
                 reranked_results = await self.rerank_service.rerank(sub_q, aggregated_results)
-                print(f"[RERANK] Returned {len(reranked_results)} results")
+                logger.info(f"[RERANK] Returned {len(reranked_results)} results")
             else:
                 reranked_results = aggregated_results
 

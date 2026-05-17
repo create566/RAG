@@ -5,17 +5,12 @@ RAG前置编排引擎
 """
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
-from enum import Enum
 import re
 
+from app.core.logging import get_logger
+from app.models.chat import ExecutionMode  # 统一从 models 导入
 
-class ExecutionMode(Enum):
-    """执行编排模式"""
-    CLARIFICATION = "clarification"
-    RETRIEVAL = "retrieval"
-    GRAPH_ONLY = "graph_only"
-    GRAPH_THEN_EVIDENCE = "graph_then_evidence"
-    REACT_AGENT = "react_agent"
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -135,13 +130,13 @@ class ChatPreparationOrchestrator:
         if clarification_selection and chat_mode == "AUTO_DOCUMENT":
             doc_info = await self._resolve_document_id_by_name(clarification_selection)
             if doc_info:
-                print(f"[ORCH] User selected document from clarification: {clarification_selection}")
+                logger.debug(f"[ORCH] User selected document from clarification: {clarification_selection}")
                 selected_document_name = doc_info["document_name"]
                 selected_document_id = doc_info["int_id"]
                 _routed_doc_uuid = doc_info["uuid"]
                 chat_mode = "DOCUMENT"
             else:
-                print(f"[ORCH] Document name '{clarification_selection}' not found in knowledge base")
+                logger.debug(f"[ORCH] Document name '{clarification_selection}' not found in knowledge base")
 
         # 1.6 检测追问并通过记忆上下文继承文档选择
         if self._is_followup_question(question, history_summary) and chat_mode == "AUTO_DOCUMENT":
@@ -149,7 +144,7 @@ class ChatPreparationOrchestrator:
             if followup_ctx and followup_ctx.get("last_document_name"):
                 doc_info = await self._resolve_document_id_by_name(followup_ctx["last_document_name"])
                 if doc_info:
-                    print(f"[ORCH] Follow-up question detected, inheriting document: {doc_info['document_name']}")
+                    logger.debug(f"[ORCH] Follow-up question detected, inheriting document: {doc_info['document_name']}")
                     selected_document_name = doc_info["document_name"]
                     selected_document_id = doc_info["int_id"]
                     _routed_doc_uuid = doc_info["uuid"]
@@ -159,20 +154,20 @@ class ChatPreparationOrchestrator:
         requires_current_date_anchoring = TimeSensitiveQueryHelper.requires_current_date_anchoring(question)
         requires_fresh_search = TimeSensitiveQueryHelper.requires_fresh_search(question)
 
-        print(f"[INTENT DEBUG] question={question}, requires_fresh_search={requires_fresh_search}")
+        logger.debug(f"[INTENT DEBUG] question={question}, requires_fresh_search={requires_fresh_search}")
         intent_decision = await self._auto_detect_intent(question, history_summary, requires_fresh_search)
-        print(f"[INTENT DEBUG] intent_decision={intent_decision}")
+        logger.debug(f"[INTENT DEBUG] intent_decision={intent_decision}")
 
         # 如果LLM判断为自由聊天/工具调用，直接走ReAct Agent
         if intent_decision == "REACT_AGENT":
-            print("[INTENT DEBUG] -> REACT_AGENT path")
+            logger.debug("[INTENT DEBUG] -> REACT_AGENT path")
             return self._base_plan(question, chat_mode, memory_context, history_summary, current_date, current_date_text,
                                     requires_current_date_anchoring, requires_fresh_search,
                                     mode=ExecutionMode.REACT_AGENT)
 
         # 如果LLM判断为闲聊，生成友好的闲聊回复（不走Agent，避免"思考: 无 动作: 无"）
         if intent_decision == "CHITCHAT":
-            print("[INTENT DEBUG] -> CHITCHAT path")
+            logger.debug("[INTENT DEBUG] -> CHITCHAT path")
             chitchat_reply = self._generate_chitchat_reply(question, history_summary)
             return self._base_plan(question, chat_mode, memory_context, history_summary, current_date, current_date_text,
                                     requires_current_date_anchoring, requires_fresh_search,
@@ -467,7 +462,7 @@ class ChatPreparationOrchestrator:
 
     async def _auto_detect_intent(self, question: str, history_summary: str, requires_fresh_search: bool) -> str:
         """AI自动判断意图 - 决定走RAG还是ReAct Agent"""
-        print(f"[INTENT] Analyzing: {question}")
+        logger.debug(f"[INTENT] Analyzing: {question}")
 
         capability_hints = ["你都能干什么", "你能做什么", "你可以做什么", "你会什么", "你是谁", "怎么用你", "能帮我什么"]
         chitchat_hints = ["你好", "您好", "hello", "hi", "谢谢", "感谢", "再见", "拜拜", "在吗", "干嘛", "你好", "嗨"]
@@ -479,46 +474,46 @@ class ChatPreparationOrchestrator:
 
         # 0. 明确的中文寒暄（精确匹配，去除标点后）
         if clean_lower in ["你好", "您好", "hi", "hello", "嗨", "嘿"]:
-            print("[INTENT] -> CHITCHAT (greeting)")
+            logger.debug("[INTENT] -> CHITCHAT (greeting)")
             return "CHITCHAT"
 
         # 1. 检查闲聊关键词
         for hint in chitchat_hints:
             if hint in clean:
-                print(f"[INTENT] -> CHITCHAT (hint: {hint})")
+                logger.debug(f"[INTENT] -> CHITCHAT (hint: {hint})")
                 return "CHITCHAT"
 
         # 2. 检查闲聊（简单符号/单字）
         if clean in ["1", "。", "", "啊", "嗯", "哦", "呃"]:
-            print("[INTENT] -> CHITCHAT (simple)")
+            logger.debug("[INTENT] -> CHITCHAT (simple)")
             return "CHITCHAT"
 
         # 3. 检查是否需要工具/实时信息
         if requires_fresh_search or any(hint in clean for hint in tool_needed_hints):
-            print(f"[INTENT] -> REACT_AGENT (needs tools or fresh search)")
+            logger.debug(f"[INTENT] -> REACT_AGENT (needs tools or fresh search)")
             return "REACT_AGENT"
 
         # 4. 检查是否询问能力
         if any(hint in clean for hint in capability_hints):
-            print("[INTENT] -> CHITCHAT (capability)")
+            logger.debug("[INTENT] -> CHITCHAT (capability)")
             return "CHITCHAT"
 
         # 5. 文档名直接匹配（书名号或扩展名）
         if ".md" in clean or ".doc" in clean or ".pdf" in clean or "《" in clean:
-            print("[INTENT] -> RAG (document reference)")
+            logger.debug("[INTENT] -> RAG (document reference)")
             return "RAG"
 
         # 5.1 编号选择（来自澄清列表的回复，如 "1"、"第1个"、"选1"）
         if re.match(r'^[\d]+[\.\、\s]?$', clean) or re.match(r'^[第]?[\d]+[个份]$', clean) or re.match(r'^[选]?[\d]+$', clean):
-            print("[INTENT] -> RAG (numbered selection)")
+            logger.debug("[INTENT] -> RAG (numbered selection)")
             return "RAG"
 
         # 6. 通用短问题（5字以内，无字母）走闲聊
         if len(clean) <= 5 and not any(c.isalpha() for c in clean):
-            print(f"[INTENT] -> CHITCHAT (short generic)")
+            logger.debug(f"[INTENT] -> CHITCHAT (short generic)")
             return "CHITCHAT"
 
-        print("[INTENT] -> RAG (default)")
+        logger.debug("[INTENT] -> RAG (default)")
         return "RAG"
 
     def _needs_llm_intent_classification(self, question: str, history_summary: str) -> bool:
