@@ -9,7 +9,7 @@ database:
   mysql:
     database: super
     host: ${MYSQL_HOST:-localhost}
-    password: '123456'
+    password: ${MYSQL_PASSWORD:-password}
     port: 3306
     username: root
 document:
@@ -26,11 +26,11 @@ document:
 embedding:
   dashscope:
     dimension: 1536
-    model: qwen3-rerank
+    model: text-embedding-v1
   provider: dashscope
 graph_db:
   neo4j:
-    password: '12345678'
+    password: ${NEO4J_PASSWORD:-password}
     uri: bolt://localhost:7687
     username: neo4j
   provider: neo4j

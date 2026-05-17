@@ -1,109 +1,91 @@
-const API_BASE = '/api'
+import { apiClient, API_BASE } from './client'
 
-// 聊天相关API
+const userId = () => parseInt(localStorage.getItem('user_id'))
+
+// 聊天
 export const chatApi = {
-  chat: async (question, conversationId = null, chatMode = 'auto', userId = null) => {
-    const response = await fetch(`${API_BASE}/chat/chat`, {
+  chat: async (question, conversationId = null, chatMode = 'auto') => {
+    const res = await apiClient('/chat/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
       body: JSON.stringify({
         question,
         conversation_id: conversationId,
         chat_mode: chatMode,
-        user_id: userId || parseInt(localStorage.getItem('user_id'))
-      })
+        user_id: userId(),
+      }),
     })
-    return response.json()
+    return res.json()
   },
 
-  streamChat: (question, conversationId = null, chatMode = 'auto', userId = null) => {
-    return fetch(`${API_BASE}/chat/chat/stream`, {
+  streamChat: (question, conversationId = null, chatMode = 'auto') => {
+    return apiClient('/chat/chat/stream', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
       body: JSON.stringify({
         question,
         conversation_id: conversationId,
         chat_mode: chatMode,
-        user_id: userId || parseInt(localStorage.getItem('user_id'))
-      })
+        user_id: userId(),
+      }),
     })
   },
 
   getHistory: async (conversationId) => {
-    const response = await fetch(`${API_BASE}/chat/conversation/${conversationId}/history`)
-    return response.json()
-  }
+    const res = await apiClient(`/chat/conversation/${conversationId}/history`)
+    return res.json()
+  },
 }
 
-// 文档相关API
+// 文档
 export const documentApi = {
-  upload: async (file, userId = null, documentName = null, chunkStrategy = null) => {
+  upload: async (file, uid, documentName = null, chunkStrategy = null) => {
     const formData = new FormData()
     formData.append('file', file)
     if (documentName) formData.append('document_name', documentName)
-    if (userId != null && userId !== 0) formData.append('user_id', userId)
+    if (uid != null && uid !== 0) formData.append('user_id', uid)
     if (chunkStrategy) formData.append('chunk_strategy', chunkStrategy)
 
-    const response = await fetch(`${API_BASE}/document/upload`, {
+    const res = await apiClient('/document/upload', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: formData
+      body: formData,
     })
-    return response.json()
+    return res.json()
   },
 
-  list: async (userId = null) => {
-    const url = userId ? `${API_BASE}/document/list?user_id=${userId}` : `${API_BASE}/document/list`
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    return response.json()
+  list: async (uid = null) => {
+    const url = uid ? `/document/list?user_id=${uid}` : '/document/list'
+    const res = await apiClient(url)
+    return res.json()
   },
 
   delete: async (documentId) => {
-    const response = await fetch(`${API_BASE}/document/${documentId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    return response.json()
-  }
+    const res = await apiClient(`/document/${documentId}`, { method: 'DELETE' })
+    return res.json()
+  },
 }
 
-// 图谱相关API
+// 图谱
 export const graphApi = {
   getDocumentStructure: async (documentId) => {
-    const response = await fetch(`${API_BASE}/chat/graph/document/${documentId}`)
-    return response.json()
+    const res = await apiClient(`/chat/graph/document/${documentId}`)
+    return res.json()
   },
 
   getChapter: async (documentId, sectionHint) => {
-    const response = await fetch(
-      `${API_BASE}/chat/graph/document/${documentId}/chapter?section_hint=${encodeURIComponent(sectionHint)}`
+    const res = await apiClient(
+      `/chat/graph/document/${documentId}/chapter?section_hint=${encodeURIComponent(sectionHint)}`
     )
-    return response.json()
+    return res.json()
   },
 
   getChapterParagraphs: async (documentId, chapterTitle) => {
-    const response = await fetch(
-      `${API_BASE}/chat/graph/document/${documentId}/chapter?section_hint=${encodeURIComponent(chapterTitle)}`
+    const res = await apiClient(
+      `/chat/graph/document/${documentId}/chapter?section_hint=${encodeURIComponent(chapterTitle)}`
     )
-    return response.json()
+    return res.json()
   },
 
   cypher: async (query) => {
-    const response = await fetch(`${API_BASE}/chat/graph/cypher?query=${encodeURIComponent(query)}`)
-    return response.json()
-  }
+    const res = await apiClient(`/chat/graph/cypher?query=${encodeURIComponent(query)}`)
+    return res.json()
+  },
 }

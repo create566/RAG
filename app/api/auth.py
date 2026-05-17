@@ -1,24 +1,28 @@
 """
-用户认证API
+用户认证 API
 """
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 from app.models.user import UserCreate, UserLogin, Token, User
 from app.core.jwt_util import verify_password, get_password_hash, create_access_token, verify_token
+from app.config import get_settings
 import pymysql
 from pymysql.cursors import DictCursor
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
+
 def get_db_connection():
+    """从配置获取数据库连接"""
+    s = get_settings()
     return pymysql.connect(
-        host="localhost",
-        port=3306,
-        user="root",
-        password="123456",
-        database="super",
+        host=s.mysql.host,
+        port=s.mysql.port,
+        user=s.mysql.username,
+        password=s.mysql.password,
+        database=s.mysql.database,
         charset="utf8mb4",
-        cursorclass=DictCursor
+        cursorclass=DictCursor,
     )
 
 

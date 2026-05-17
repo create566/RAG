@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Square, Trash2, Copy, User, Bot, LogOut, Plus } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSearchParams } from 'react-router-dom'
+import { apiClient } from '../api/client'
 import './ChatPage.css'
 
 const CHAT_API = '/api/chat'
@@ -60,7 +61,7 @@ function ChatPage() {
   const loadConversation = async (convId) => {
     setCurrentAnswer('')
     try {
-      const res = await fetch(`${CHAT_API}/conversations/${convId}/messages`)
+      const res = await apiClient(`${CHAT_API}/conversations/${convId}/messages`)
       const data = await res.json()
       if (data.success && data.messages) {
         setMessages(data.messages.map(m => ({
@@ -107,12 +108,8 @@ function ChatPage() {
       const controller = new AbortController()
       abortRef.current = controller
 
-      const response = await fetch(`${CHAT_API}/chat/stream`, {
+      const response = await apiClient(`${CHAT_API}/chat/stream`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({
           question,
           conversation_id: conversationId || undefined,

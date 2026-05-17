@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Network, RefreshCw, Search, ChevronRight, FileText, Hash, Layers } from 'lucide-react'
-import { graphApi } from '../api/services'
+import { graphApi, documentApi } from '../api/services'
 import './GraphPage.css'
 
 function GraphPage() {
@@ -19,8 +19,7 @@ function GraphPage() {
 
   const loadDocuments = async () => {
     try {
-      const res = await fetch('/api/document/list')
-      const data = await res.json()
+      const data = await documentApi.list()
       if (data.success) {
         setDocuments(data.documents || [])
       }

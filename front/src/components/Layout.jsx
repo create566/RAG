@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { MessageSquare, FileText, Network, Menu, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { apiClient } from '../api/client'
 import './Layout.css'
 
 const CHAT_API = '/api/chat'
@@ -27,7 +28,7 @@ function Layout() {
     if (!userId) return
     setLoadingConv(true)
     try {
-      const res = await fetch(`${CHAT_API}/conversations?user_id=${userId}`)
+      const res = await apiClient(`${CHAT_API}/conversations?user_id=${userId}`)
       const data = await res.json()
       if (data.success) setConversations(data.date_groups || [])
     } catch (e) { console.error(e) }
@@ -36,9 +37,9 @@ function Layout() {
 
   useEffect(() => { loadConversations() }, [userId])
 
-  // 每 5 秒刷新（有新对话时更新）
+  // 每 30 秒刷新
   useEffect(() => {
-    const interval = setInterval(loadConversations, 5000)
+    const interval = setInterval(loadConversations, 30000)
     return () => clearInterval(interval)
   }, [userId])
 
@@ -54,7 +55,7 @@ function Layout() {
     e.stopPropagation()
     if (!confirm('删除该会话？')) return
     try {
-      await fetch(`${CHAT_API}/conversations/${convId}`, { method: 'DELETE' })
+      await apiClient(`${CHAT_API}/conversations/${convId}`, { method: 'DELETE' })
       if (convId === activeConvId) navigate('/chat')
       loadConversations()
     } catch (e) { console.error(e) }

@@ -1,5 +1,5 @@
 """
-JWT工具类
+JWT工具类 — 密钥和算法从统一配置读取
 """
 from datetime import datetime, timedelta
 from typing import Optional, Dict
@@ -7,9 +7,11 @@ from jose import jwt
 import hashlib
 import secrets
 
-SECRET_KEY = "your-secret-key-change-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
+
+def _get_config():
+    from app.config import get_settings
+    s = get_settings()
+    return s.jwt_secret_key, s.jwt_algorithm, s.jwt_expire_hours
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -20,7 +22,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    """密码哈希 - 使用盐值SHA256（避免bcrypt兼容性问题）"""
+    """密码哈希 - 使用盐值 SHA256"""
     salt = secrets.token_hex(16)
     pwd_hash = hashlib.sha256((salt + password).encode()).hexdigest()
     return f"{salt}${pwd_hash}"
@@ -28,18 +30,20 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(user_id: int, username: str) -> str:
     """创建访问令牌"""
+    secret_key, algorithm, expire_hours = _get_config()
     payload = {
         "user_id": user_id,
         "username": username,
-        "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        "exp": datetime.utcnow() + timedelta(hours=expire_hours)
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, secret_key, algorithm=algorithm)
 
 
 def verify_token(token: str) -> Optional[Dict]:
     """验证令牌"""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        secret_key, algorithm, _ = _get_config()
+        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
         return payload
     except Exception:
         return None

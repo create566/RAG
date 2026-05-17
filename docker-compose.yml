@@ -117,7 +117,7 @@ services:
       - "7474:7474"
       - "7687:7687"
     environment:
-      - NEO4J_AUTH=neo4j/12345678
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-password}
       - NEO4J_PLUGINS='["apoc"]'
     volumes:
       - neo4j_data:/data
