@@ -1,0 +1,122 @@
+agent:
+  max_parallel_tools: 4
+  model_call_limit: 8
+  parallel_tool_execution: true
+  session_model_call_limit: 40
+  session_tool_call_limit: 30
+  tool_call_limit: 6
+database:
+  mysql:
+    database: super
+    host: ${MYSQL_HOST:-localhost}
+    password: '123456'
+    port: 3306
+    username: root
+document:
+  chunk_strategies:
+  - structural
+  - recursive
+  - semantic
+  - llm
+  # 可用策略列表（用于前端展示选项）
+  # 实际启用的策略由 default_strategy 控制
+  # 组合模式: "structural,recursive"、"structural,recursive,semantic" 等
+  default_strategy: structural,recursive
+  max_child_chunks: 500
+embedding:
+  dashscope:
+    dimension: 1536
+    model: qwen3-rerank
+  provider: dashscope
+graph_db:
+  neo4j:
+    password: '12345678'
+    uri: bolt://localhost:7687
+    username: neo4j
+  provider: neo4j
+keyword_search:
+  elasticsearch:
+    hosts:
+    - ${ELASTICSEARCH_HOSTS:-http://localhost:9200}
+    index: super_agent_keywords
+  provider: elasticsearch
+llm:
+  dashscope:
+    api_key: ${DASHSCOPE_API_KEY}
+    max_tokens: 4096
+    model: qwen-max
+    temperature: 0.7
+  provider: dashscope
+mcp:
+  servers:
+  - enabled: false
+    endpoint: http://localhost:8080/mcp
+    name: filesystem
+  - enabled: false
+    endpoint: http://localhost:8081/mcp
+    name: calculator
+memory:
+  recent_max_chars: 2200
+  recent_turns: 4
+  sliding_window_size: 10
+  strategy: summary
+  summary_max_chars: 1400
+  summary_max_turns: 6
+message_queue:
+  kafka:
+    bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
+    topic: super-agent-doc-processing
+object_storage:
+  minio:
+    access_key: minioadmin
+    bucket: super-agent
+    endpoint: ${MINIO_ENDPOINT:-localhost:9000}
+    secret_key: minioadmin
+    secure: false
+  provider: minio
+rerank:
+  provider: siliconflow
+  siliconflow:
+    api_key: ${SILICONFLOW_API_KEY}
+    model: BAAI/bge-reranker-v2-m3
+retrieval:
+  child_chunk_size: 500
+  enable_semantic_compress: true
+  evidence_budget_per_child: 1500
+  evidence_budget_total: 4000
+  keyword_top_k: 10
+  max_parent_chunks: 5
+  min_keyword_score: 0.05
+  min_vector_similarity: 0.08
+  parent_chunk_size: 2000
+  rrf_k: 60
+  vector_top_k: 10
+search:
+  duckduckgo:
+    max_results: 5
+server:
+  host: 0.0.0.0
+  port: 8001
+  reload: false
+skills:
+- description: 网页搜索和信息查询
+  enabled: true
+  name: web_search
+  prompt_template: 你是一个专业的搜索助手，擅长从互联网获取最新信息来回答用户问题。
+  tools:
+  - tavily_search
+- description: 编程和代码分析
+  enabled: true
+  name: code_expert
+  prompt_template: 你是一个资深程序员，擅长解答编程问题和代码优化。
+  tools: []
+- description: 通用对话
+  enabled: true
+  name: general
+  prompt_template: 你是一个友好的AI助手，能够回答各种问题。
+  tools: []
+vector_store:
+  chroma:
+    collection_name: super_agent_docs
+    persist_directory: ./data/chroma
+  provider: chroma

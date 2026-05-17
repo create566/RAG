@@ -1,0 +1,193 @@
+# Super Agent Python Backend - Docker Compose Configuration
+# 使用: docker-compose up -d
+
+services:
+  # ===========================================
+  # 应用服务
+  # ===========================================
+  super-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: super-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-123456}
+      - MYSQL_DATABASE=super
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-12345678}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SERVER_PORT=8001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+    volumes:
+      - ./data/uploads:/app/data/uploads
+
+  # ===========================================
+  # 必需中间件
+  # ===========================================
+
+  # MySQL - 会话记忆持久化
+  mysql:
+    image: mysql:8.0
+    container_name: super-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD:-123456}
+      - MYSQL_DATABASE=super
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init_mysql.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Chroma - 向量数据库
+  chroma:
+    image: ghcr.io/chroma-core/chroma:0.5.0
+    container_name: super-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/data
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Elasticsearch - BM25关键词检索
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: super-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Neo4j - 图数据库
+  neo4j:
+    image: neo4j:5.19
+    container_name: super-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/12345678
+      - NEO4J_PLUGINS='["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ===========================================
+  # 可选中间件
+  # ===========================================
+
+  # 对象存储 - MinIO
+  minio:
+    image: minio/minio:latest
+    container_name: super-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+
+  # Kafka - 异步消息队列
+  kafka:
+    image: bitnami/kafka:3.6
+    container_name: super-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - super-agent-network
+    restart: unless-stopped
+
+# ===========================================
+# 数据卷
+# ===========================================
+volumes:
+  mysql_data:
+  chroma_data:
+  es_data:
+  neo4j_data:
+  neo4j_logs:
+  minio_data:
+  kafka_data:
+
+# ===========================================
+# 网络
+# ===========================================
+networks:
+  super-agent-network:
+    driver: bridge

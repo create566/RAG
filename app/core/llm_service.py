@@ -1,0 +1,224 @@
+"""
+LLM服务 - 对标Java的ObservedChatModelService
+支持多种大模型：DashScope、OpenAI、Anthropic
+"""
+from typing import Dict, Any, Optional, List
+import asyncio
+import os
+
+
+class BaseLLMService:
+    """LLM服务基类"""
+
+    async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        raise NotImplementedError
+
+    async def embed(self, text: str) -> List[float]:
+        raise NotImplementedError
+
+
+class DashScopeLLMService(BaseLLMService):
+    """阿里云百炼LLM服务"""
+
+    def __init__(self, api_key: str, model: str = "qwen-turbo", config: Dict = None):
+        self.api_key = api_key or os.environ.get("DASHSCOPE_API_KEY", "")
+        self.model = model
+        self.config = config or {}
+        self.base_url = self.config.get("base_url", "https://dashscope.aliyuncs.com/api/v1")
+        self._embedding_failure_count = 0
+        self.embedding_available = True
+        # 从环境变量读取 embedding 模型
+        self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-v1")
+        print(f"[EMBED] Using model: {self.embedding_model}")
+
+    async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        """调用DashScope API"""
+        try:
+            import dashscope
+            from dashscope import Generation
+
+            dashscope.api_key = self.api_key
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            def _call():
+                return Generation.call(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=kwargs.get("max_tokens", 4096),
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.8)
+                )
+
+            response = await asyncio.to_thread(_call)
+
+            if response.status_code == 200:
+                output = response.output
+                if output is None:
+                    return ""
+                return output.get("text", "")
+            else:
+                return f"API调用失败: {response.message}"
+        except Exception as e:
+            return f"调用失败: {str(e)}"
+
+    async def embed(self, text: str) -> List[float]:
+        """获取文本嵌入（带重试）"""
+        import dashscope
+        from dashscope import TextEmbedding
+
+        dashscope.api_key = self.api_key
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
+                def _call():
+                    return TextEmbedding.call(
+                        model=self.embedding_model,
+                        input=text
+                    )
+
+                response = await asyncio.to_thread(_call)
+
+                if response.status_code == 200:
+                    embeddings = response.output
+                    if embeddings is None:
+                        return []
+                    embeds = embeddings.get("embeddings", [{}])
+                    if embeds and embeds[0].get("embedding"):
+                        self._embedding_failure_count = 0  # 成功后重置计数器
+                        self.embedding_available = True
+                        return embeds[0]["embedding"]
+                    return []
+                else:
+                    print(f"Embedding API错误 (attempt {attempt+1}/{max_retries}): {response.message}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(base_delay * (2 ** attempt))
+                    continue
+            except Exception as e:
+                print(f"Embedding失败 (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(base_delay * (2 ** attempt))
+                continue
+
+        self._embedding_failure_count += 1
+        if self._embedding_failure_count >= 3:
+            self.embedding_available = False
+            print(f"[WARN] Embedding 已连续失败 {self._embedding_failure_count} 次，向量检索已禁用，将仅使用关键词检索")
+        print(f"Embedding全部 {max_retries} 次重试失败")
+        return []
+
+
+class OpenAILLMService(BaseLLMService):
+    """OpenAI LLM服务"""
+
+    def __init__(self, api_key: str, model: str = "gpt-4-turbo", base_url: str = None, config: Dict = None):
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.model = model
+        self.base_url = base_url or "https://api.openai.com/v1"
+        self.config = config or {}
+
+    async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        """调用OpenAI API"""
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", 4096),
+                temperature=kwargs.get("temperature", 0.7)
+            )
+
+            if response.choices:
+                return response.choices[0].message.content
+            return ""
+        except Exception as e:
+            return f"调用失败: {str(e)}"
+
+    async def embed(self, text: str) -> List[float]:
+        """获取文本嵌入"""
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+
+            response = client.embeddings.create(
+                model="text-embedding-ada-002",
+                input=text
+            )
+
+            return response.data[0].embedding
+        except Exception as e:
+            print(f"Embedding失败: {e}")
+            return []
+
+
+class AnthropicLLMService(BaseLLMService):
+    """Anthropic LLM服务"""
+
+    def __init__(self, api_key: str, model: str = "claude-3-opus-20240229", config: Dict = None):
+        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.model = model
+        self.config = config or {}
+
+    async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        """调用Anthropic API"""
+        try:
+            from anthropic import Anthropic
+
+            client = Anthropic(api_key=self.api_key)
+
+            response = client.messages.create(
+                model=self.model,
+                max_tokens=kwargs.get("max_tokens", 4096),
+                temperature=kwargs.get("temperature", 0.7),
+                system=system_prompt,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            return response.content[0].text
+        except Exception as e:
+            return f"调用失败: {str(e)}"
+
+    async def embed(self, text: str) -> List[float]:
+        # Anthropic不提供embedding服务，使用其他服务
+        return []
+
+
+def create_llm_service(provider: str = "dashscope", config: Dict = None) -> BaseLLMService:
+    """工厂方法创建LLM服务"""
+    config = config or {}
+
+    if provider == "dashscope":
+        return DashScopeLLMService(
+            api_key=config.get("api_key", ""),
+            model=config.get("model", "qwen-turbo"),
+            config=config
+        )
+    elif provider == "openai":
+        return OpenAILLMService(
+            api_key=config.get("api_key", ""),
+            model=config.get("model", "gpt-4-turbo"),
+            base_url=config.get("base_url"),
+            config=config
+        )
+    elif provider == "anthropic":
+        return AnthropicLLMService(
+            api_key=config.get("api_key", ""),
+            model=config.get("model", "claude-3-opus-20240229"),
+            config=config
+        )
+    else:
+        raise ValueError(f"不支持的LLM provider: {provider}")
