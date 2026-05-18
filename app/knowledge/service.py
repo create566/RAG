@@ -3,6 +3,9 @@
 """
 from typing import List, Dict, Any, Optional
 from app.models.document import DocumentRouteCandidate, KnowledgeRouteDecision, KnowledgeDomain
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class KnowledgeRouteService:
@@ -44,6 +47,15 @@ class KnowledgeRouteService:
                         reason="唯一文档"
                     )
                 ]
+            )
+
+        # 快速关键词预筛：问题与文档名完全无交集 → 跳过 LLM
+        if not self._quick_match(question, documents):
+            logger.info(f"关键词预筛无匹配，跳过 LLM 路由 → 降级 LLM 回答")
+            return KnowledgeRouteDecision(
+                confidence=0.0,
+                route_status="no_match",
+                documents=[]
             )
 
         # 使用LLM进行路由决策
@@ -140,6 +152,22 @@ class KnowledgeRouteService:
                 route_status="fallback",
                 documents=candidates
             )
+
+    def _quick_match(self, question: str, documents: List[Dict]) -> bool:
+        """快速关键词预筛：文档名中是否包含问题的关键词"""
+        try:
+            import jieba
+            q_words = set(jieba.cut(question))
+        except ImportError:
+            q_words = set(question)
+        for doc in documents:
+            doc_name = doc.get('document_name', '')
+            doc_scope = doc.get('knowledge_scope_name', '')
+            text = doc_name + ' ' + doc_scope
+            for w in q_words:
+                if len(w) >= 2 and w in text:
+                    return True
+        return False
 
     def _format_documents(self, documents: List[Dict]) -> str:
         """格式化文档列表（去重）"""
