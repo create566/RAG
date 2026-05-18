@@ -120,37 +120,12 @@ class KnowledgeRouteService:
                 route_status="success",
                 documents=candidates
             )
-        except:
-            # 降级：返回前几个文档（去重）
-            seen_names = set()
-            unique_docs = []
-            for doc in documents:
-                name = doc.get("document_name", "")
-                if name and name not in seen_names:
-                    seen_names.add(name)
-                    unique_docs.append(doc)
-                    if len(unique_docs) >= 3:
-                        break
-
-            candidates = [
-                DocumentRouteCandidate(
-                    document_id=str(doc.get("id", "")),
-                    document_name=doc.get("document_name", ""),
-                    last_index_task_id=str(doc.get("last_index_task_id", "")),
-                    knowledge_scope_code=doc.get("knowledge_scope_code", ""),
-                    knowledge_scope_name=doc.get("knowledge_scope_name", ""),
-                    business_category=doc.get("business_category", ""),
-                    document_tags=doc.get("document_tags", ""),
-                    score=0.5,
-                    reason="降级选择"
-                )
-                for doc in unique_docs
-            ]
-
+        except Exception as e:
+            logger.warning(f"LLM 路由失败: {e}，跳过 → 降级 LLM 自由回答")
             return KnowledgeRouteDecision(
-                confidence=0.3,
+                confidence=0.0,
                 route_status="fallback",
-                documents=candidates
+                documents=[]
             )
 
     def _quick_match(self, question: str, documents: List[Dict]) -> bool:
