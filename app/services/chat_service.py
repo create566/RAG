@@ -146,7 +146,7 @@ class ChatService:
 
         # ReAct Agent
         from app.agent.react import ReActAgent, DuckDuckGoSearchTool, GetCurrentTimeTool
-        from app.agent.skill import get_skill_manager
+        from app.models.skill import get_skill_manager
         tools = []
 
         try:
