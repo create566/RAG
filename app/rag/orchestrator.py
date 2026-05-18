@@ -5,6 +5,7 @@ RAG前置编排引擎
 """
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
+import asyncio
 import re
 
 from app.core.logging import get_logger
@@ -378,7 +379,12 @@ class ChatPreparationOrchestrator:
 请以JSON格式返回:
 {{"rewritten_question": "...", "sub_questions": ["...", "..."]}}
 """
-        response = await self.llm_service.chat(prompt)
+        try:
+            response = await asyncio.wait_for(self.llm_service.chat(prompt), timeout=10)
+        except asyncio.TimeoutError:
+            logger.warning("问题改写 LLM 超时 (10s)，使用原始问题")
+            return RagRewriteResult(rewritten_question=question, sub_questions=[question])
+
         # 简单解析，实际应该用结构化输出
         try:
             import json
