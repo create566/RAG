@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { apiClient } from '../api/client'
 import './Layout.css'
 
-const CHAT_API = '/api/chat'
+const CHAT_API = '/chat'
 
 const navItems = [
   { path: '/chat', label: '智能对话', icon: MessageSquare },

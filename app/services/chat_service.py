@@ -1,7 +1,6 @@
 """
 聊天业务服务 — 从 api/chat.py 提取
 """
-import json
 import pymysql
 
 from app.config import get_settings
@@ -178,7 +177,7 @@ class ChatService:
 
     async def chat(self, request):
         """处理聊天请求"""
-        from app.models.chat import ChatResponse, SourceReference, ExecutionMode
+        from app.models.chat import ChatResponse, ExecutionMode
         from app.agent import ClarificationExecutor, AgentExecutor
 
         logger.info(f"CHAT: question={request.question}, mode={request.chat_mode}")

@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom'
 import { apiClient } from '../api/client'
 import './ChatPage.css'
 
-const CHAT_API = '/api/chat'
+const CHAT_API = '/chat'
 
 function getConvStorageKey(userId) {
   return `super_chat_conv_id_${userId || 0}`
