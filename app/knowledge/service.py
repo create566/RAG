@@ -202,11 +202,3 @@ class KnowledgeRouteService:
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [d for _, d in scored]
-
-    async def record_shadow_route(self, conversation_id: str, exchange_id: int, document_id: int, question: str, rewrite_question: str):
-        """记录影子路由 - 对标Java的recordShadowRoute"""
-        pass
-
-    async def record_auto_route(self, conversation_id: str, exchange_id: int, question: str, rewrite_question: str, route_decision: KnowledgeRouteDecision):
-        """记录自动路由 - 对标Java的recordAutoRoute"""
-        pass
