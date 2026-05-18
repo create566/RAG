@@ -127,8 +127,12 @@ class DocumentService:
 
                 embedding = await self.llm_service.embed(chunk)
                 if not embedding or len(embedding) == 0:
+                    if embedding_ok:
+                        logger.warning(f"Embedding 返回空，chunk={i}（仅关键词检索可用）")
                     embedding_ok = False
                     embedding = [0.0] * 1536
+                elif embedding_ok and i == 0:
+                    logger.info(f"Embedding 成功: dim={len(embedding)}")
                 embeddings.append(embedding)
                 metadatas.append({
                     "document_id": doc_id,

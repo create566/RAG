@@ -309,6 +309,8 @@ class ChatService:
                     plan.original_question,
                     system_prompt="你是一个智能助手。知识库中没有找到相关信息，请基于你的知识直接回答用户问题。",
                 )
+                if answer and (answer.startswith("API调用失败") or answer.startswith("调用失败")):
+                    logger.error(f"LLM 调用失败: {answer}")
             else:
                 prompt_dict = self.prompt_assembler.assemble(plan, retrieval_context)
                 logger.debug(f"LLM prompt length: user={len(prompt_dict['user_prompt'])}, system={len(prompt_dict['system_prompt'])}")

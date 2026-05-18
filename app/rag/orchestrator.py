@@ -178,6 +178,7 @@ class ChatPreparationOrchestrator:
         # 如果意图判断失败，默认也走知识路由
 
         # 3. 问题改写
+        logger.info(f"[PREPARE] 步骤3: 问题改写...")
         rewrite_result = await self._rewrite_question(question, history_summary)
         rewrite_question = rewrite_result.rewritten_question if rewrite_result else question
         rewrite_sub_questions = rewrite_result.sub_questions if rewrite_result and rewrite_result.sub_questions else [rewrite_question]
@@ -212,6 +213,7 @@ class ChatPreparationOrchestrator:
                 routed_document_ids = [uuid]
 
         if chat_mode == "AUTO_DOCUMENT":
+            logger.info(f"[PREPARE] 步骤4: 知识路由...")
             route_decision = await self.knowledge_route_service.route(question, rewrite_question)
 
             # 检查是否需要澄清
@@ -248,6 +250,7 @@ class ChatPreparationOrchestrator:
             routed_task_ids = [int(doc.last_index_task_id) if doc.last_index_task_id and str(doc.last_index_task_id).isdigit() else None for doc in route_decision.documents]
 
         # 5. 文档导航决策
+        logger.info(f"[PREPARE] 步骤5: 文档导航决策...")
         navigation_decision = await self.document_router.route(routed_document_id, question, rewrite_result)
 
         execution_mode = navigation_decision.execution_mode if navigation_decision else ExecutionMode.RETRIEVAL
