@@ -383,7 +383,7 @@ class ChatPreparationOrchestrator:
     def _should_ask_clarification(self, route_decision) -> bool:
         """判断是否需要澄清"""
         if not route_decision or not route_decision.documents:
-            return True
+            return False  # 无匹配文档 → 不澄清，让 RAG 降级到 LLM 直接回答
         # 去重：按文档名去重
         seen_names = set()
         unique_docs = []
