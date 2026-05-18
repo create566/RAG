@@ -217,6 +217,9 @@ class ChatPreparationOrchestrator:
             route_decision = await self.knowledge_route_service.route(question, rewrite_question)
 
             # 检查是否需要澄清
+            if route_decision:
+                logger.info(f"[ROUTE] confidence={route_decision.confidence:.3f}, docs={len(route_decision.documents)}, "
+                           f"top_score={route_decision.documents[0].score if route_decision.documents else 0}")
             if self._should_ask_clarification(route_decision):
                 clarification_reply = self._build_clarification_reply(question, route_decision)
                 return self._base_plan(question, chat_mode, memory_context, history_summary, current_date, current_date_text,
@@ -356,6 +359,11 @@ class ChatPreparationOrchestrator:
 
     async def _rewrite_question(self, question: str, history_summary: str) -> RagRewriteResult:
         """问题改写 - 对标Java的ChatQueryRewriteService"""
+        # 无历史上下文时跳过 LLM 改写（节省一次 API 调用）
+        if not history_summary or not history_summary.strip():
+            logger.info("无历史上下文，跳过问题改写")
+            return RagRewriteResult(rewritten_question=question, sub_questions=[question])
+
         prompt = f"""将用户的问题改写为检索友好的表达。
 
 原始问题: {question}
@@ -396,8 +404,12 @@ class ChatPreparationOrchestrator:
                 unique_docs.append(doc)
         route_decision.documents = unique_docs
 
-        # 置信度太低，需要澄清
+        # 置信度太低但无真正匹配 → 不澄清，降级 LLM
         if route_decision.confidence < 0.4:
+            top = route_decision.documents[0].score if route_decision.documents else 0
+            if top < 0.15:
+                logger.info(f"置信度 {route_decision.confidence:.2f} 且最高分 {top:.2f} < 0.15 → 不追问，降级")
+                return False
             return True
         # 只有一个文档，直接使用
         if len(route_decision.documents) < 2:
