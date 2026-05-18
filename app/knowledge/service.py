@@ -121,7 +121,30 @@ class KnowledgeRouteService:
                 documents=candidates
             )
         except Exception as e:
-            logger.warning(f"LLM 路由失败: {e}，跳过 → 降级 LLM 自由回答")
+            logger.warning(f"LLM 路由失败: {e}")
+            # 关键词命中 → 保留文档继续检索；无命中 → 跳过检索直接 LLM
+            if self._quick_match(question, documents):
+                logger.info("关键词有命中，fallback 保留全部文档继续检索")
+                candidates = [
+                    DocumentRouteCandidate(
+                        document_id=str(doc.get("id", "")),
+                        document_name=doc.get("document_name", ""),
+                        last_index_task_id=str(doc.get("last_index_task_id", "")),
+                        knowledge_scope_code=doc.get("knowledge_scope_code", ""),
+                        knowledge_scope_name=doc.get("knowledge_scope_name", ""),
+                        business_category=doc.get("business_category", ""),
+                        document_tags=doc.get("document_tags", ""),
+                        score=0.12,
+                        reason="关键词匹配降级"
+                    )
+                    for doc in documents[:3]
+                ]
+                return KnowledgeRouteDecision(
+                    confidence=0.12,
+                    route_status="fallback_keyword_match",
+                    documents=candidates
+                )
+            logger.info("关键词无命中，跳过检索 → 降级 LLM")
             return KnowledgeRouteDecision(
                 confidence=0.0,
                 route_status="fallback",
