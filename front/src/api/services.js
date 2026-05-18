@@ -41,7 +41,7 @@ export const documentApi = {
     const formData = new FormData()
     formData.append('file', file)
     if (documentName) formData.append('document_name', documentName)
-    if (uid != null && uid !== 0) formData.append('user_id', uid)
+    if (uid != null) formData.append('user_id', uid)
     if (chunkStrategy) formData.append('chunk_strategy', chunkStrategy)
 
     const res = await apiClient('/document/upload', {

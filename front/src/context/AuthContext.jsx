@@ -9,10 +9,11 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
-    const storedUser = localStorage.getItem('user')
-    if (storedToken && storedUser) {
+    const storedUserId = localStorage.getItem('user_id')
+    const storedUsername = localStorage.getItem('username')
+    if (storedToken && storedUserId) {
       setToken(storedToken)
-      setUser(JSON.parse(storedUser))
+      setUser({ user_id: parseInt(storedUserId), username: storedUsername })
     }
     setLoading(false)
   }, [])
