@@ -46,6 +46,13 @@ async def get_db():
             raise
 
 
+async def get_async_session():
+    """独立事务用的异步会话（不依赖 FastAPI 依赖注入）"""
+    factory = get_session_factory()
+    async with factory() as session:
+        return session
+
+
 async def close_db():
     """关闭连接池"""
     global _async_engine

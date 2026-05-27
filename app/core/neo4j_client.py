@@ -2,6 +2,7 @@
 Neo4j 图数据库客户端封装
 对标 Java 的 GraphDatabaseClient
 """
+import asyncio
 from typing import Dict, List, Optional, Any
 from neo4j import GraphDatabase
 
@@ -58,16 +59,12 @@ class Neo4jClient:
             result = session.run(cypher, params or {})
             return [dict(record) for record in result]
 
-    def get_document_structure(self, document_id: int) -> Dict[str, Any]:
-        """
-        获取文档的章节结构
+    async def async_query(self, cypher: str, params: Optional[Dict] = None) -> List[Dict]:
+        """异步执行 Cypher 查询（使用线程池避免阻塞事件循环）"""
+        return await asyncio.to_thread(self.query, cypher, params)
 
-        Args:
-            document_id: 文档ID
-
-        Returns:
-            包含章节结构的字典
-        """
+    async def async_get_document_structure(self, document_id: int) -> Dict[str, Any]:
+        """异步获取文档的章节结构"""
         cypher = """
         MATCH (d:Document {document_id: $document_id})
         OPTIONAL MATCH (d)-[:CONTAINS]->(chapter:Chapter)
@@ -78,7 +75,7 @@ class Neo4jClient:
                collect(DISTINCT section.title) as sections,
                count(DISTINCT paragraph) as paragraph_count
         """
-        results = self.query(cypher, {"document_id": document_id})
+        results = await self.async_query(cypher, {"document_id": document_id})
         if results:
             return {
                 "document_id": document_id,
@@ -89,17 +86,8 @@ class Neo4jClient:
             }
         return {"document_id": document_id, "document_title": "", "chapters": [], "sections": [], "paragraph_count": 0}
 
-    def query_section(self, document_id: int, section_hint: str) -> List[Dict[str, Any]]:
-        """
-        根据章节提示查询章节内容
-
-        Args:
-            document_id: 文档ID
-            section_hint: 章节提示 (如 "第3章")
-
-        Returns:
-            匹配的章节列表
-        """
+    async def async_query_section(self, document_id: int, section_hint: str) -> List[Dict[str, Any]]:
+        """异步查询章节内容"""
         cypher = """
         MATCH (d:Document {document_id: $document_id})-[:CONTAINS]->(chapter:Chapter)
         WHERE chapter.title CONTAINS $section_hint
@@ -110,21 +98,10 @@ class Neo4jClient:
                collect(DISTINCT section.title) as sections,
                collect(DISTINCT paragraph.content) as paragraphs
         """
-        results = self.query(cypher, {"document_id": document_id, "section_hint": section_hint})
-        return results
+        return await self.async_query(cypher, {"document_id": document_id, "section_hint": section_hint})
 
-    def query_item_in_section(self, document_id: int, section_hint: str, item_index: int) -> List[Dict[str, Any]]:
-        """
-        查询章节中的特定条目 (第X条/第X点)
-
-        Args:
-            document_id: 文档ID
-            section_hint: 章节提示
-            item_index: 条目索引
-
-        Returns:
-            匹配的条目列表
-        """
+    async def async_query_item_in_section(self, document_id: int, section_hint: str, item_index: int) -> List[Dict[str, Any]]:
+        """异步查询章节中的特定条目"""
         cypher = """
         MATCH (d:Document {document_id: $document_id})-[:CONTAINS]->(chapter:Chapter)
         WHERE chapter.title CONTAINS $section_hint
@@ -134,8 +111,7 @@ class Neo4jClient:
                item.content as item_content,
                item.index as item_index
         """
-        results = self.query(cypher, {"document_id": document_id, "section_hint": section_hint, "item_index": item_index})
-        return results
+        return await self.async_query(cypher, {"document_id": document_id, "section_hint": section_hint, "item_index": item_index})
 
     def create_document_node(self, document_id: int, title: str, metadata: Optional[Dict] = None) -> bool:
         """

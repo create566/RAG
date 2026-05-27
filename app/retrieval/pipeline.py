@@ -194,10 +194,12 @@ class KeywordRetrievalChannel:
             search_body["query"]["bool"]["filter"].append({"term": {"user_id": user_id}})
 
         try:
-            response = self.es_client.search(
-                index=self.config.get("index", "super_agent_keywords"),
-                body=search_body
-            )
+            def _search():
+                return self.es_client.search(
+                    index=self.config.get("index", "super_agent_keywords"),
+                    body=search_body
+                )
+            response = await asyncio.to_thread(_search)
 
             results = []
             for hit in response["hits"]["hits"]:

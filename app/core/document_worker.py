@@ -145,7 +145,8 @@ class DocumentWorker:
             logger.error("Failed to create Kafka consumer, exiting")
             return
 
-        try:
+        async def consume_messages():
+            """在单独线程中消费消息，避免阻塞事件循环"""
             for message in self._consumer:
                 data = message.value
                 if data.get("event_type") == "document.uploaded":
@@ -155,6 +156,9 @@ class DocumentWorker:
                         file_path=data.get("file_path"),
                         metadata=data.get("metadata")
                     )
+
+        try:
+            await asyncio.to_thread(consume_messages)
         except KeyboardInterrupt:
             logger.error("Document Worker stopped")
         finally:

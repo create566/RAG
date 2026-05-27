@@ -1,9 +1,10 @@
 """
 聊天业务服务 — 从 api/chat.py 提取
 """
-import pymysql
+from sqlalchemy import text
 
 from app.config import get_settings
+from app.core.database import get_async_session
 from app.utils.env import resolve_env
 from app.core.logging import get_logger
 
@@ -507,51 +508,49 @@ class ChatService:
         try:
             await self.memory_service.save_exchange(conversation_id, user_id, question, answer)
 
-            settings = get_settings()
-            conn = pymysql.connect(
-                host=settings.mysql.host,
-                port=settings.mysql.port,
-                user=settings.mysql.username,
-                password=settings.mysql.password,
-                database=settings.mysql.database,
-                charset="utf8mb4",
-            )
-            cur = conn.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS conversation (
-                    id VARCHAR(64) PRIMARY KEY,
-                    user_id INT NOT NULL DEFAULT 0,
-                    title VARCHAR(255) DEFAULT '',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    summary TEXT,
-                    INDEX idx_user_id (user_id),
-                    INDEX idx_updated_at (updated_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS message (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    conversation_id VARCHAR(64) NOT NULL,
-                    role VARCHAR(20) NOT NULL,
-                    content TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_conversation_id (conversation_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """)
-            conn.commit()
-            cur.execute(
-                "INSERT INTO conversation (id, user_id, title, summary) VALUES (%s, %s, %s, '') "
-                "ON DUPLICATE KEY UPDATE updated_at = NOW(), user_id = COALESCE(user_id, VALUES(user_id))",
-                (conversation_id, user_id or 0, question[:100]),
-            )
-            cur.execute("INSERT INTO message (conversation_id, role, content) VALUES (%s, 'user', %s)",
-                        (conversation_id, question))
-            cur.execute("INSERT INTO message (conversation_id, role, content) VALUES (%s, 'assistant', %s)",
-                        (conversation_id, answer))
-            conn.commit()
-            logger.info(f"CONV SAVE: id={conversation_id[:12]}, user_id={user_id}")
-            conn.close()
+            session = await get_async_session()
+            async with session:
+                # 确保表存在
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS conversation (
+                        id VARCHAR(64) PRIMARY KEY,
+                        user_id INT NOT NULL DEFAULT 0,
+                        title VARCHAR(255) DEFAULT '',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        summary TEXT,
+                        INDEX idx_user_id (user_id),
+                        INDEX idx_updated_at (updated_at)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS message (
+                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                        conversation_id VARCHAR(64) NOT NULL,
+                        role VARCHAR(20) NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_conversation_id (conversation_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """))
+                await session.commit()
+
+                # 插入会话记录
+                await session.execute(
+                    text("INSERT INTO conversation (id, user_id, title, summary) VALUES (:id, :user_id, :title, '') "
+                         "ON DUPLICATE KEY UPDATE updated_at = NOW(), user_id = COALESCE(user_id, VALUES(user_id))"),
+                    {"id": conversation_id, "user_id": user_id or 0, "title": question[:100]}
+                )
+                await session.execute(
+                    text("INSERT INTO message (conversation_id, role, content) VALUES (:conv_id, 'user', :content)"),
+                    {"conv_id": conversation_id, "content": question}
+                )
+                await session.execute(
+                    text("INSERT INTO message (conversation_id, role, content) VALUES (:conv_id, 'assistant', :content)"),
+                    {"conv_id": conversation_id, "content": answer}
+                )
+                await session.commit()
+                logger.info(f"CONV SAVE: id={conversation_id[:12]}, user_id={user_id}")
         except Exception as e:
             logger.warning(f"保存记忆失败: {e}")
 

@@ -197,12 +197,15 @@ class OpenAILLMService(BaseLLMService):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=kwargs.get("max_tokens", 4096),
-                temperature=kwargs.get("temperature", 0.7)
-            )
+            def _call():
+                return client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=kwargs.get("max_tokens", 4096),
+                    temperature=kwargs.get("temperature", 0.7)
+                )
+
+            response = await asyncio.to_thread(_call)
 
             if response.choices:
                 return response.choices[0].message.content
@@ -217,10 +220,13 @@ class OpenAILLMService(BaseLLMService):
 
             client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-            response = client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=text
-            )
+            def _call():
+                return client.embeddings.create(
+                    model="text-embedding-ada-002",
+                    input=text
+                )
+
+            response = await asyncio.to_thread(_call)
 
             return response.data[0].embedding
         except Exception as e:
@@ -243,13 +249,16 @@ class AnthropicLLMService(BaseLLMService):
 
             client = Anthropic(api_key=self.api_key)
 
-            response = client.messages.create(
-                model=self.model,
-                max_tokens=kwargs.get("max_tokens", 4096),
-                temperature=kwargs.get("temperature", 0.7),
-                system=system_prompt,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            def _call():
+                return client.messages.create(
+                    model=self.model,
+                    max_tokens=kwargs.get("max_tokens", 4096),
+                    temperature=kwargs.get("temperature", 0.7),
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+
+            response = await asyncio.to_thread(_call)
 
             return response.content[0].text
         except Exception as e:

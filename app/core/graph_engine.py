@@ -63,7 +63,7 @@ class Neo4jGraphQueryEngine(BaseGraphQueryEngine):
         Returns:
             包含文档标题、章节列表、段落数量的字典
         """
-        result = self.client.get_document_structure(document_id)
+        result = await self.client.async_get_document_structure(document_id)
         return {
             "document_id": document_id,
             "document_title": result.get("document_title", ""),
@@ -86,7 +86,7 @@ class Neo4jGraphQueryEngine(BaseGraphQueryEngine):
             章节内容和条目列表
         """
         if item_index is not None:
-            items = self.client.query_item_in_section(document_id, section_hint, item_index)
+            items = await self.client.async_query_item_in_section(document_id, section_hint, item_index)
             if items:
                 return {
                     "document_id": document_id,
@@ -97,7 +97,7 @@ class Neo4jGraphQueryEngine(BaseGraphQueryEngine):
                     "status": "success"
                 }
 
-        sections = self.client.query_section(document_id, section_hint)
+        sections = await self.client.async_query_section(document_id, section_hint)
         if sections:
             section = sections[0]
             return {
@@ -133,7 +133,7 @@ class Neo4jGraphQueryEngine(BaseGraphQueryEngine):
                chapter.content as content,
                size((chapter)-[:CONTAINS]->()) as child_count
         """
-        results = self.client.query(cypher, {"document_id": document_id})
+        results = await self.client.async_query(cypher, {"document_id": document_id})
         return [
             {
                 "title": r.get("title", ""),
@@ -160,7 +160,7 @@ class Neo4jGraphQueryEngine(BaseGraphQueryEngine):
         RETURN d.title as document_title,
                [(node in nodes(path) | {title: node.title, type: labels(node)[0]})] as toc
         """
-        results = self.client.query(cypher, {"document_id": document_id})
+        results = await self.client.async_query(cypher, {"document_id": document_id})
         if results:
             return {
                 "document_title": results[0].get("document_title", ""),

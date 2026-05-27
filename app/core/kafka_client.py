@@ -2,6 +2,7 @@
 Kafka 消息队列客户端
 用于异步触发文档处理流程
 """
+import asyncio
 from typing import Optional, Dict, Any
 import json
 import os
@@ -59,12 +60,17 @@ class KafkaClient:
                 value=message,
                 key=key
             )
-            # 等待发送完成（同步）
-            future.get(timeout=10)
+            # 异步等待发送完成，使用回调而非阻塞
+            future.add_callback(lambda m: logger.debug(f"Kafka message sent: {m.offset}"))
+            future.add_errback(lambda e: logger.error(f"Kafka send error: {e}"))
             return True
         except KafkaError as e:
             logger.error(f"Kafka send error: {e}")
             return False
+
+    async def async_send_message(self, message: Dict[str, Any], key: str = None) -> bool:
+        """异步发送消息（使用线程池避免阻塞）"""
+        return await asyncio.to_thread(self.send_message, message, key)
 
     def send_document_upload_event(self, document_id: str, file_name: str, file_path: str, metadata: Dict[str, Any] = None) -> bool:
         """

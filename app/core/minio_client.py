@@ -2,6 +2,7 @@
 MinIO 对象存储客户端
 用于文档文件的云存储
 """
+import asyncio
 from typing import Optional
 from minio import Minio
 from minio.error import S3Error
@@ -43,7 +44,7 @@ class MinioClient:
                 self.client.make_bucket(self.bucket)
             return True
         except S3Error as e:
-            logger.error( bucket error: {e}")
+            logger.error(f"bucket error: {e}")
             return False
 
     def upload_file(self, object_name: str, file_path: str, content_type: str = "application/octet-stream") -> Optional[str]:
@@ -69,7 +70,7 @@ class MinioClient:
             # 返回对象路径
             return f"{self.bucket}/{object_name}"
         except S3Error as e:
-            logger.error( upload error: {e}")
+            logger.error(f"upload error: {e}")
             return None
 
     def upload_bytes(self, object_name: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
@@ -95,7 +96,7 @@ class MinioClient:
             )
             return f"{self.bucket}/{object_name}"
         except S3Error as e:
-            logger.error( upload error: {e}")
+            logger.error(f"upload error: {e}")
             return None
 
     def download_file(self, object_name: str, file_path: str) -> bool:
@@ -104,7 +105,7 @@ class MinioClient:
             self.client.fget_object(self.bucket, object_name, file_path)
             return True
         except S3Error as e:
-            logger.error( download error: {e}")
+            logger.error(f"download error: {e}")
             return False
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> Optional[str]:
@@ -112,7 +113,7 @@ class MinioClient:
         try:
             return self.client.presigned_get_object(self.bucket, object_name, expires)
         except S3Error as e:
-            logger.error( presigned URL error: {e}")
+            logger.error(f"presigned URL error: {e}")
             return None
 
     def delete_file(self, object_name: str) -> bool:
@@ -121,7 +122,7 @@ class MinioClient:
             self.client.remove_object(self.bucket, object_name)
             return True
         except S3Error as e:
-            logger.error( delete error: {e}")
+            logger.error(f"delete error: {e}")
             return False
 
     def list_files(self, prefix: str = "") -> list:
@@ -130,8 +131,22 @@ class MinioClient:
             objects = self.client.list_objects(self.bucket, prefix=prefix)
             return [obj.object_name for obj in objects]
         except S3Error as e:
-            logger.error( list error: {e}")
+            logger.error(f"list error: {e}")
             return []
+
+    # ── 异步包装方法 ───────────────────────────────────────
+
+    async def async_upload_file(self, object_name: str, file_path: str, content_type: str = "application/octet-stream") -> Optional[str]:
+        """异步上传文件"""
+        return await asyncio.to_thread(self.upload_file, object_name, file_path, content_type)
+
+    async def async_download_file(self, object_name: str, file_path: str) -> bool:
+        """异步下载文件"""
+        return await asyncio.to_thread(self.download_file, object_name, file_path)
+
+    async def async_get_presigned_url(self, object_name: str, expires: int = 3600) -> Optional[str]:
+        """异步获取预签名URL"""
+        return await asyncio.to_thread(self.get_presigned_url, object_name, expires)
 
 
 def create_minio_client(config: dict = None) -> MinioClient:

@@ -25,7 +25,9 @@ data/uploads/
 Thumbs.db
 
 # 日志
-debug.log
+logs/
+*.log
+*.csv
 
 # Claude Code
 .claude/
