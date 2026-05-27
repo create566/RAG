@@ -1,0 +1,107 @@
+2026-05-25 19:01:11.842 | INFO     | app.services.chat_service:_save_conversation:553 - CONV SAVE: id=conv_6401845, user_id=2
+2026-05-25 19:09:09.440 | INFO     | app.core.logging:setup_logging:34 - Logging initialized
+2026-05-25 19:09:46.252 | INFO     | app.core.logging:setup_logging:34 - Logging initialized
+2026-05-25 19:09:54.802 | INFO     | app.core.llm_service:__init__:37 - Using embedding model: text-embedding-v1
+2026-05-25 19:09:56.665 | INFO     | app.services.chat_service:__init__:119 - 图查询引擎初始化成功
+2026-05-25 19:09:57.233 | INFO     | app.models.skill:register_tool:27 - [SKILL] Registered tool: get_current_time
+2026-05-25 19:09:57.233 | INFO     | app.services.chat_service:__init__:158 - GetCurrentTime tool registered
+2026-05-25 19:09:57.233 | INFO     | app.agent.mcp:add_server:112 - [MCP] Added server: weather
+2026-05-25 19:09:57.233 | INFO     | app.services.chat_service:__init__:169 - [MCP] Configured 1 servers, discovery deferred
+2026-05-25 19:09:57.233 | INFO     | app.services.chat_service:__init__:176 - Loaded 0 skills
+2026-05-25 19:09:57.248 | INFO     | app.services.chat_service:chat_stream:296 - CHAT STREAM: question=差旅费用报销流程是什么？, mode=ChatQueryMode.AUTO_DOCUMENT
+2026-05-25 19:09:57.256 | DEBUG    | app.rag.orchestrator:prepare:158 - [INTENT DEBUG] question=差旅费用报销流程是什么？, requires_fresh_search=False
+2026-05-25 19:09:57.256 | DEBUG    | app.rag.orchestrator:_auto_detect_intent:486 - [INTENT] Analyzing: 差旅费用报销流程是什么？
+2026-05-25 19:09:57.257 | DEBUG    | app.rag.orchestrator:_auto_detect_intent:537 - [INTENT] -> RAG (default)
+2026-05-25 19:09:57.257 | DEBUG    | app.rag.orchestrator:prepare:160 - [INTENT DEBUG] intent_decision=RAG
+2026-05-25 19:09:57.257 | INFO     | app.rag.orchestrator:prepare:182 - [PREPARE] 步骤3: 问题改写...
+2026-05-25 19:10:04.577 | INFO     | app.rag.orchestrator:prepare:217 - [PREPARE] 步骤4: 知识路由...
+2026-05-25 19:10:18.720 | WARNING  | app.knowledge.service:route:119 - LLM 路由失败: Expecting value: line 1 column 1 (char 0)
+2026-05-25 19:10:18.721 | INFO     | app.knowledge.service:route:122 - 关键词有命中，fallback 保留全部文档继续检索
+2026-05-25 19:10:18.721 | INFO     | app.rag.orchestrator:prepare:222 - [ROUTE] confidence=0.120, docs=2, top_score=0.12
+2026-05-25 19:10:18.721 | INFO     | app.rag.orchestrator:_should_ask_clarification:417 - 置信度 0.12 且最高分 0.12 < 0.15 → 不追问，降级
+2026-05-25 19:10:18.721 | INFO     | app.rag.orchestrator:prepare:257 - [PREPARE] 步骤5: 文档导航决策...
+2026-05-25 19:10:18.721 | DEBUG    | app.services.chat_service:chat_stream:315 - Plan mode: ExecutionMode.RETRIEVAL
+2026-05-25 19:10:18.722 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['2544d101-089d-47a1-8af0-fc22354eb479', '8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:10:19.272 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=开始进行差旅费用报销前需要准备哪些材料？, vector_results=10, keyword_results=10
+2026-05-25 19:10:19.272 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 17 results
+2026-05-25 19:10:20.089 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:10:20.090 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['2544d101-089d-47a1-8af0-fc22354eb479', '8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:10:20.702 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=提交差旅费用报销申请时应遵循哪些步骤？, vector_results=10, keyword_results=10
+2026-05-25 19:10:20.702 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 12 results
+2026-05-25 19:10:21.434 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:10:21.434 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['2544d101-089d-47a1-8af0-fc22354eb479', '8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:10:21.916 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=差旅费用报销审核的大概时间是多久？, vector_results=10, keyword_results=10
+2026-05-25 19:10:21.916 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 15 results
+2026-05-25 19:10:22.545 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:10:22.546 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['2544d101-089d-47a1-8af0-fc22354eb479', '8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:10:23.045 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=如果差旅费用报销被拒绝，通常的原因有哪些？, vector_results=10, keyword_results=10
+2026-05-25 19:10:23.046 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 14 results
+2026-05-25 19:10:23.672 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:10:23.673 | INFO     | app.core.prompt_assembly:assemble:27 - [PROMPT] sub_questions count: 4, references count: 20
+2026-05-25 19:10:23.674 | INFO     | app.core.prompt_assembly:assemble:87 - [PROMPT] Assembled - system_prompt: 159 chars, user_prompt: 2416 chars, evidence: 2278 chars
+2026-05-25 19:10:23.674 | DEBUG    | app.services.chat_service:_handle_rag_mode:453 - LLM prompt length: user=2416, system=159
+2026-05-25 19:11:24.108 | INFO     | app.services.chat_service:_save_conversation:553 - CONV SAVE: id=conv_6401845, user_id=2
+2026-05-25 19:19:05.991 | INFO     | app.core.logging:setup_logging:34 - Logging initialized
+2026-05-25 19:19:10.825 | INFO     | app.core.llm_service:__init__:37 - Using embedding model: text-embedding-v1
+2026-05-25 19:19:12.707 | INFO     | app.services.chat_service:__init__:119 - 图查询引擎初始化成功
+2026-05-25 19:19:13.406 | INFO     | app.models.skill:register_tool:27 - [SKILL] Registered tool: get_current_time
+2026-05-25 19:19:13.407 | INFO     | app.services.chat_service:__init__:158 - GetCurrentTime tool registered
+2026-05-25 19:19:13.407 | INFO     | app.agent.mcp:add_server:112 - [MCP] Added server: weather
+2026-05-25 19:19:13.407 | INFO     | app.services.chat_service:__init__:169 - [MCP] Configured 1 servers, discovery deferred
+2026-05-25 19:19:13.407 | INFO     | app.services.chat_service:__init__:176 - Loaded 0 skills
+2026-05-25 19:19:13.423 | INFO     | app.services.chat_service:chat_stream:296 - CHAT STREAM: question=差旅费用报销流程是什么？, mode=ChatQueryMode.AUTO_DOCUMENT
+2026-05-25 19:19:13.439 | DEBUG    | app.rag.orchestrator:prepare:158 - [INTENT DEBUG] question=差旅费用报销流程是什么？, requires_fresh_search=False
+2026-05-25 19:19:13.439 | DEBUG    | app.rag.orchestrator:_auto_detect_intent:486 - [INTENT] Analyzing: 差旅费用报销流程是什么？
+2026-05-25 19:19:13.440 | DEBUG    | app.rag.orchestrator:_auto_detect_intent:537 - [INTENT] -> RAG (default)
+2026-05-25 19:19:13.440 | DEBUG    | app.rag.orchestrator:prepare:160 - [INTENT DEBUG] intent_decision=RAG
+2026-05-25 19:19:13.440 | INFO     | app.rag.orchestrator:prepare:182 - [PREPARE] 步骤3: 问题改写...
+2026-05-25 19:19:18.296 | INFO     | app.rag.orchestrator:prepare:217 - [PREPARE] 步骤4: 知识路由...
+2026-05-25 19:19:30.821 | WARNING  | app.knowledge.service:route:119 - LLM 路由失败: Expecting value: line 1 column 1 (char 0)
+2026-05-25 19:19:30.821 | INFO     | app.knowledge.service:route:122 - 关键词有命中，fallback 保留全部文档继续检索
+2026-05-25 19:19:30.821 | INFO     | app.rag.orchestrator:prepare:222 - [ROUTE] confidence=0.120, docs=2, top_score=0.12
+2026-05-25 19:19:30.821 | INFO     | app.rag.orchestrator:_should_ask_clarification:417 - 置信度 0.12 且最高分 0.12 < 0.15 → 不追问，降级
+2026-05-25 19:19:30.821 | INFO     | app.rag.orchestrator:prepare:257 - [PREPARE] 步骤5: 文档导航决策...
+2026-05-25 19:19:30.822 | DEBUG    | app.services.chat_service:chat_stream:315 - Plan mode: ExecutionMode.RETRIEVAL
+2026-05-25 19:19:30.822 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['2544d101-089d-47a1-8af0-fc22354eb479', '8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:19:31.426 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=公司的差旅费用报销流程具体步骤是什么？, vector_results=10, keyword_results=10
+2026-05-25 19:19:31.426 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 14 results
+2026-05-25 19:19:32.215 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:19:32.215 | INFO     | app.core.prompt_assembly:assemble:27 - [PROMPT] sub_questions count: 1, references count: 5
+2026-05-25 19:19:32.215 | INFO     | app.core.prompt_assembly:assemble:87 - [PROMPT] Assembled - system_prompt: 159 chars, user_prompt: 753 chars, evidence: 615 chars
+2026-05-25 19:19:32.216 | DEBUG    | app.services.chat_service:_handle_rag_mode:453 - LLM prompt length: user=753, system=159
+2026-05-25 19:22:32.605 | INFO     | app.services.chat_service:_save_conversation:553 - CONV SAVE: id=conv_6401845, user_id=2
+2026-05-25 19:25:32.211 | INFO     | app.core.logging:setup_logging:34 - Logging initialized
+2026-05-25 19:25:50.886 | INFO     | app.core.logging:setup_logging:34 - Logging initialized
+2026-05-25 19:26:14.420 | INFO     | app.core.llm_service:__init__:37 - Using embedding model: text-embedding-v1
+2026-05-25 19:26:16.234 | INFO     | app.services.chat_service:__init__:119 - 图查询引擎初始化成功
+2026-05-25 19:26:16.983 | INFO     | app.models.skill:register_tool:27 - [SKILL] Registered tool: get_current_time
+2026-05-25 19:26:16.984 | INFO     | app.services.chat_service:__init__:158 - GetCurrentTime tool registered
+2026-05-25 19:26:16.984 | INFO     | app.agent.mcp:add_server:112 - [MCP] Added server: weather
+2026-05-25 19:26:16.984 | INFO     | app.services.chat_service:__init__:169 - [MCP] Configured 1 servers, discovery deferred
+2026-05-25 19:26:16.984 | INFO     | app.services.chat_service:__init__:176 - Loaded 0 skills
+2026-05-25 19:26:17.002 | INFO     | app.services.chat_service:chat_stream:296 - CHAT STREAM: question=差旅费用报销流程是什么？, mode=ChatQueryMode.AUTO_DOCUMENT
+2026-05-25 19:26:17.033 | DEBUG    | app.rag.orchestrator:prepare:158 - [INTENT DEBUG] question=差旅费用报销流程是什么？, requires_fresh_search=False
+2026-05-25 19:26:17.033 | DEBUG    | app.rag.orchestrator:_auto_detect_intent:486 - [INTENT] Analyzing: 差旅费用报销流程是什么？
+2026-05-25 19:26:17.034 | DEBUG    | app.rag.orchestrator:_auto_detect_intent:537 - [INTENT] -> RAG (default)
+2026-05-25 19:26:17.034 | DEBUG    | app.rag.orchestrator:prepare:160 - [INTENT DEBUG] intent_decision=RAG
+2026-05-25 19:26:17.034 | INFO     | app.rag.orchestrator:prepare:182 - [PREPARE] 步骤3: 问题改写...
+2026-05-25 19:26:21.054 | INFO     | app.rag.orchestrator:prepare:217 - [PREPARE] 步骤4: 知识路由...
+2026-05-25 19:26:23.654 | INFO     | app.rag.orchestrator:prepare:222 - [ROUTE] confidence=0.950, docs=1, top_score=0.8
+2026-05-25 19:26:23.654 | INFO     | app.rag.orchestrator:prepare:257 - [PREPARE] 步骤5: 文档导航决策...
+2026-05-25 19:26:23.654 | DEBUG    | app.services.chat_service:chat_stream:315 - Plan mode: ExecutionMode.RETRIEVAL
+2026-05-25 19:26:23.655 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:26:24.367 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=差旅费用报销的流程是什么？, vector_results=10, keyword_results=10
+2026-05-25 19:26:24.368 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 13 results
+2026-05-25 19:26:25.154 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:26:25.155 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:26:25.708 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=员工在差旅结束后需要按照哪些步骤进行费用报销？, vector_results=10, keyword_results=10
+2026-05-25 19:26:25.708 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 14 results
+2026-05-25 19:26:26.387 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:26:26.387 | INFO     | app.retrieval.pipeline:retrieve:186 - [KEYWORD] Filter by UUIDs: ['8c3c4b8b-c0c4-4408-8ed1-6428ede7be03']
+2026-05-25 19:26:26.886 | INFO     | app.retrieval.pipeline:retrieve:461 - [RETRIEVAL] sub_q=报销差旅费用时需要准备哪些材料？, vector_results=10, keyword_results=10
+2026-05-25 19:26:26.886 | INFO     | app.retrieval.pipeline:retrieve:479 - [RERANK] Calling rerank service with 14 results
+2026-05-25 19:26:27.560 | INFO     | app.retrieval.pipeline:retrieve:481 - [RERANK] Returned 5 results
+2026-05-25 19:26:27.562 | INFO     | app.core.prompt_assembly:assemble:27 - [PROMPT] sub_questions count: 3, references count: 15
+2026-05-25 19:26:27.562 | INFO     | app.core.prompt_assembly:assemble:87 - [PROMPT] Assembled - system_prompt: 159 chars, user_prompt: 1927 chars, evidence: 1789 chars
+2026-05-25 19:26:27.562 | DEBUG    | app.services.chat_service:_handle_rag_mode:453 - LLM prompt length: user=1927, system=159
+2026-05-25 19:26:38.914 | INFO     | app.services.chat_service:_save_conversation:553 - CONV SAVE: id=conv_6401845, user_id=2

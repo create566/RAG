@@ -130,6 +130,10 @@ class SkillConfig(BaseModel):
     tools: List[str] = Field(default_factory=list)
 
 
+class MCPConfig(BaseModel):
+    servers: List[Dict] = Field(default_factory=list)
+
+
 class RerankConfig(BaseModel):
     provider: str = "siliconflow"
     api_key: str = ""
@@ -168,6 +172,7 @@ class Settings(BaseSettings):
     document: DocumentConfig = Field(default_factory=DocumentConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
     skills: List[SkillConfig] = Field(default_factory=list)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
@@ -287,6 +292,10 @@ class Settings(BaseSettings):
         skills_list = yaml_config.get("skills", [])
         skills = [SkillConfig(**s) for s in skills_list] if skills_list else []
 
+        # 解析 MCP
+        mcp_list = yaml_config.get("mcp", {}).get("servers", [])
+        mcp = MCPConfig(servers=mcp_list)
+
         return cls(
             server_host=server_cfg.get("host", "0.0.0.0"),
             server_port=server_cfg.get("port", 8001),
@@ -306,6 +315,7 @@ class Settings(BaseSettings):
             document=document,
             rerank=rerank,
             skills=skills,
+            mcp=mcp,
         )
 
 

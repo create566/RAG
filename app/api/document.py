@@ -4,9 +4,10 @@
 from typing import Optional
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
 
 from app.services.document_service import get_document_service
+from app.api.deps import get_current_user
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,10 +20,11 @@ ALLOWED_EXTS = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".txt", ".md", ".xlsx"
 async def upload_document(
     file: UploadFile = File(...),
     document_name: Optional[str] = None,
-    user_id: Optional[int] = None,
-    chunk_strategy: Optional[str] = None,
+    chunk_strategy: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user),
 ):
     """上传文档（同步处理），可选指定切块策略"""
+    user_id = current_user.get("user_id")
     logger.info(f"UPLOAD: file={file.filename}, user_id={user_id}, chunk_strategy={chunk_strategy}")
 
     ext = Path(file.filename).suffix.lower()
@@ -49,8 +51,9 @@ async def upload_document(
 
 
 @router.get("/list")
-async def list_documents(user_id: Optional[int] = None):
+async def list_documents(current_user: dict = Depends(get_current_user)):
     """列出所有已上传的文档"""
+    user_id = current_user.get("user_id")
     try:
         service = get_document_service()
         docs = await service.list_documents(user_id)

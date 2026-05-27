@@ -144,25 +144,32 @@ class ChatService:
             config=retrieval_dict,
         )
 
-        # ReAct Agent
-        from app.agent.react import ReActAgent, DuckDuckGoSearchTool, GetCurrentTimeTool
+        # ReAct Agent - 时间工具 + MCP 工具
+        from app.agent.react import ReActAgent, GetCurrentTimeTool
+        from app.agent.mcp import get_mcp_provider
         from app.models.skill import get_skill_manager
         tools = []
 
-        try:
-            ddg_tool = DuckDuckGoSearchTool(max_results=settings.search.max_results)
-            tools.append(ddg_tool)
-            skill_manager = get_skill_manager()
-            skill_manager.register_tool("web_search", ddg_tool)
-            logger.info(f"DuckDuckGo search tool registered, max_results={settings.search.max_results}")
-        except ImportError as e:
-            logger.warning(f"DuckDuckGo not available: {e}")
-
+        # 时间工具
         time_tool = GetCurrentTimeTool()
         tools.append(time_tool)
         skill_manager = get_skill_manager()
         skill_manager.register_tool("get_current_time", time_tool)
         logger.info("GetCurrentTime tool registered")
+
+        # MCP 工具加载（延迟到第一次使用时）
+        try:
+            mcp_provider = get_mcp_provider()
+            if settings.mcp and settings.mcp.servers:
+                for server_cfg in settings.mcp.servers:
+                    if server_cfg.get('enabled', False):
+                        mcp_provider.add_server(server_cfg['endpoint'], server_cfg.get('name', ''))
+                # 记录 MCP 提供者，在 chat 时再 discover
+                self._mcp_provider = mcp_provider
+                logger.info(f"[MCP] Configured {len(settings.mcp.servers)} servers, discovery deferred")
+        except Exception as e:
+            logger.warning(f"[MCP] Failed to configure MCP: {e}")
+            self._mcp_provider = None
 
         skill_cfgs = [s.model_dump() for s in settings.skills]
         skill_manager.load_skills_from_config(skill_cfgs)
@@ -209,7 +216,34 @@ class ChatService:
                 })
 
             elif plan.mode == ExecutionMode.REACT_AGENT:
+                # MCP 工具发现（在 chat 时进行，避免 __init__ 中 await）
+                logger.info(f"[MCP] _mcp_provider = {self._mcp_provider}, type = {type(self._mcp_provider)}")
+                if self._mcp_provider:
+                    try:
+                        logger.info(f"[MCP] Starting discovery...")
+                        await self._mcp_provider.discover_all_servers()
+                        mcp_tools = self._mcp_provider.list_tools()
+                        logger.info(f"[MCP] Discovered {len(mcp_tools)} tools: {[t.name for t in mcp_tools]}")
+                        if mcp_tools:
+                            from app.agent.react import AgentTool
+                            for mcp_tool in mcp_tools:
+                                async def mcp_wrapper(**kwargs):
+                                    return await self._mcp_provider.invoke_tool(mcp_tool.name, kwargs)
+                                agent_tool = AgentTool(name=mcp_tool.name, description=mcp_tool.description, func=mcp_wrapper)
+                                if mcp_tool.name not in self.react_agent.tools:
+                                    self.react_agent.tools[mcp_tool.name] = agent_tool
+                                    logger.info(f"[MCP] Added tool: {mcp_tool.name}")
+                        else:
+                            logger.warning("[MCP] No tools discovered from servers")
+                    except Exception as e:
+                        logger.warning(f"[MCP] Tool discovery failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    logger.warning("[MCP] No _mcp_provider configured, skipping MCP discovery")
+
                 executor = AgentExecutor(self.react_agent)
+                logger.info(f"[REACT] Agent tools: {list(self.react_agent.tools.keys())}")
                 memory_context = await self.memory_service.load_memory_context(
                     conversation_id, request.user_id
                 )
@@ -254,6 +288,109 @@ class ChatService:
                 conversation_id=request.conversation_id or "error",
             )
 
+    async def chat_stream(self, request):
+        """处理聊天请求（流式）— 逐 token yield SSE 事件"""
+        from app.models.chat import ChatResponse, ExecutionMode
+        from app.agent import ClarificationExecutor, AgentExecutor
+
+        logger.info(f"CHAT STREAM: question={request.question}, mode={request.chat_mode}")
+
+        conversation_id = request.conversation_id or f"conv_{id(request)}"
+        full_answer = ""
+
+        try:
+            task_info = {
+                "conversation_id": conversation_id,
+                "question": request.question,
+                "chat_mode": request.chat_mode.value,
+                "selected_document_id": request.selected_document_id,
+                "selected_document_name": request.selected_document_name,
+                "selected_task_id": request.selected_task_id,
+                "current_date": None,
+                "current_date_text": "",
+                "user_id": request.user_id,
+            }
+
+            plan = await self.orchestrator.prepare(task_info)
+            logger.debug(f"Plan mode: {plan.mode}")
+
+            if plan.mode == ExecutionMode.CLARIFICATION:
+                executor = ClarificationExecutor(self.llm_service)
+                result = await executor.execute({
+                    "question": plan.original_question,
+                    "clarification_reply": plan.clarification_reply,
+                    "clarification_options": plan.clarification_options,
+                })
+                answer = result.content if hasattr(result, 'content') else str(result)
+                full_answer = answer
+                yield answer
+
+            elif plan.mode == ExecutionMode.REACT_AGENT:
+                # MCP 工具发现（在 chat 时进行，避免 __init__ 中 await）
+                logger.info(f"[MCP] _mcp_provider = {self._mcp_provider}, type = {type(self._mcp_provider)}")
+                if self._mcp_provider:
+                    try:
+                        logger.info(f"[MCP] Starting discovery...")
+                        await self._mcp_provider.discover_all_servers()
+                        mcp_tools = self._mcp_provider.list_tools()
+                        logger.info(f"[MCP] Discovered {len(mcp_tools)} tools: {[t.name for t in mcp_tools]}")
+                        if mcp_tools:
+                            from app.agent.react import AgentTool
+                            for mcp_tool in mcp_tools:
+                                async def mcp_wrapper(**kwargs):
+                                    return await self._mcp_provider.invoke_tool(mcp_tool.name, kwargs)
+                                agent_tool = AgentTool(name=mcp_tool.name, description=mcp_tool.description, func=mcp_wrapper)
+                                if mcp_tool.name not in self.react_agent.tools:
+                                    self.react_agent.tools[mcp_tool.name] = agent_tool
+                                    logger.info(f"[MCP] Added tool: {mcp_tool.name}")
+                        else:
+                            logger.warning("[MCP] No tools discovered from servers")
+                    except Exception as e:
+                        logger.warning(f"[MCP] Tool discovery failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    logger.warning("[MCP] No _mcp_provider configured, skipping MCP discovery")
+
+                executor = AgentExecutor(self.react_agent)
+                logger.info(f"[REACT] Agent tools: {list(self.react_agent.tools.keys())}")
+                memory_context = await self.memory_service.load_memory_context(
+                    conversation_id, request.user_id
+                )
+                history_text = memory_context.get("recent_transcript", "") or ""
+                history = []
+                if history_text:
+                    for line in history_text.split("\n"):
+                        if line.startswith("用户:"):
+                            history.append({"role": "user", "content": line[3:].strip()})
+                        elif line.startswith("助手:"):
+                            history.append({"role": "assistant", "content": line[3:].strip()})
+
+                async for token in executor.execute_stream({
+                    "question": plan.original_question,
+                    "history": history,
+                }):
+                    if token:
+                        full_answer += token
+                        yield token
+
+            else:
+                # RAG 模式：先获取检索结果，再流式调用 LLM
+                result = await self._handle_rag_mode(plan, request.user_id)
+                answer = result.content if hasattr(result, 'content') else str(result)
+                full_answer = answer
+                yield answer
+
+            # 保存对话记忆
+            if full_answer:
+                await self._save_conversation(conversation_id, request.user_id, request.question, full_answer)
+
+        except Exception as e:
+            import traceback
+            err_msg = f"处理出错: {e}\n{traceback.format_exc()}"
+            logger.error(err_msg)
+            yield err_msg
+
     async def _handle_rag_mode(self, plan, user_id: int):
         """处理 RAG 检索模式"""
         from app.models.chat import ExecutionMode
@@ -279,7 +416,7 @@ class ChatService:
                     retrieval_context = await self.rag_engine.retrieve(plan, user_id=user_id)
                     if retrieval_context.is_empty():
                         answer = await self.llm_service.chat(
-                            plan.original_question,
+                            self._build_fallback_prompt(plan),
                             system_prompt="你是一个智能助手，请直接回答用户问题。",
                         )
                     else:
@@ -292,7 +429,7 @@ class ChatService:
                 retrieval_context = await self.rag_engine.retrieve(plan, user_id=user_id)
                 if retrieval_context.is_empty():
                     answer = await self.llm_service.chat(
-                        plan.original_question,
+                        self._build_fallback_prompt(plan),
                         system_prompt="你是一个智能助手，请直接回答用户问题。",
                     )
                 else:
@@ -306,7 +443,7 @@ class ChatService:
             if retrieval_context.is_empty():
                 logger.info("RAG 无证据，降级为 LLM 自由回答")
                 answer = await self.llm_service.chat(
-                    plan.original_question,
+                    self._build_fallback_prompt(plan),
                     system_prompt="你是一个智能助手。知识库中没有找到相关信息，请基于你的知识直接回答用户问题。",
                 )
                 if answer and (answer.startswith("API调用失败") or answer.startswith("调用失败")):
@@ -330,6 +467,16 @@ class ChatService:
                 self.suggested_questions = []
 
         return RAGResult()
+
+    def _build_fallback_prompt(self, plan) -> str:
+        """构建降级LLM的prompt，包含历史上下文和改写后的问题"""
+        parts = []
+        if plan.history_summary:
+            parts.append(f"以下是对话历史，请务必记住其中提到的信息（如用户名字等）：\n{plan.history_summary}")
+        question = plan.rewrite_question or plan.original_question
+        parts.append(f"用户当前问题：{question}")
+        parts.append("请基于对话历史和你的知识直接回答。如果历史中有相关信息，必须在回答中使用。")
+        return "\n\n".join(parts)
 
     def _build_sources(self, result_or_context) -> list:
         """构建来源列表"""

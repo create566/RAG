@@ -1,21 +1,33 @@
 """
 LangGraph Agent核心模块
-基于状态机实现ReAct Agent，对标Java的ReactAgentExecutor
+基于 LangGraph StateGraph 实现 ReAct Agent，对标 Java 的 ReactAgentExecutor
 """
-from typing import List, Dict, Any, Optional, Callable, TypedDict
+from typing import List, Dict, Any, Optional, Callable, TypedDict, Annotated, AsyncIterator
 from enum import Enum
+import operator
 import asyncio
+import json
+
+from langgraph.graph import StateGraph, END, START
 
 
-class AgentState(TypedDict):
-    """Agent状态"""
-    messages: List[Dict[str, Any]]
+# ── State ──────────────────────────────────────────────
+
+class ReActState(TypedDict):
+    """LangGraph ReAct Agent 状态"""
+    messages: Annotated[List[Dict[str, Any]], operator.add]
+    question: str
     model_calls: int
     tool_calls: int
-    used_tools: List[str]
-    trace: Dict[str, Any]
-    error: Optional[str]
+    used_tools: Annotated[List[str], operator.add]
+    trace_steps: Annotated[List[Dict], operator.add]
+    pending_tool_name: str
+    pending_tool_params: Dict
+    final_answer: str
+    error: str
 
+
+# ── Tools ──────────────────────────────────────────────
 
 class AgentTool:
     """Agent工具"""
@@ -56,7 +68,7 @@ class DuckDuckGoSearchTool(AgentTool):
             if not results:
                 return "没有找到相关信息"
 
-            response = f"搜索结果:\n\n"
+            response = "搜索结果:\n\n"
             for r in results[:3]:
                 response += f"- {r.get('title', '')}\n"
                 response += f"  {r.get('href', '')}\n"
@@ -87,135 +99,257 @@ class GetCurrentTimeTool(AgentTool):
         return f"当前时间: {now.strftime('%Y年%m月%d日 %H:%M:%S')} {weekday}"
 
 
+# ── ReAct Agent (LangGraph) ────────────────────────────
+
 class ReActAgent:
-    """ReAct Agent - 对标Java的ReactAgentExecutor"""
+    """ReAct Agent - 基于 LangGraph StateGraph"""
 
     def __init__(self, llm_service, tools: List[AgentTool], config: Dict[str, Any]):
         self.llm_service = llm_service
-        self.tools = tools
+        self.tools = {t.name: t for t in tools}
         self.config = config
 
         self.model_call_limit = config.get("model_call_limit", 8)
         self.tool_call_limit = config.get("tool_call_limit", 6)
         self.max_steps = config.get("max_steps", 10)
 
-    async def execute(self, question: str, history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """执行ReAct循环"""
-        history = history or []
-        model_calls = 0
-        tool_calls = 0
-        used_tools = []
-        trace_steps = []
+        self._graph = self._build_graph()
 
-        current_question = question
-        observation = ""
+    # ── Graph construction ──────────────────────────────
 
-        for step in range(self.max_steps):
-            # 检查限制
-            if model_calls >= self.model_call_limit:
-                return {
-                    "answer": "已达到最大模型调用次数限制",
-                    "model_calls": model_calls,
-                    "tool_calls": tool_calls,
-                    "used_tools": used_tools,
-                    "trace": {"steps": trace_steps},
-                    "error": "Model call limit exceeded"
-                }
+    def _build_graph(self):
+        """构建 LangGraph StateGraph"""
+        builder = StateGraph(ReActState)
 
-            # 构建ReAct提示词
-            prompt = self._build_react_prompt(current_question, history, observation)
+        builder.add_node("agent", self._agent_node)
+        builder.add_node("tools", self._tools_node)
 
-            # 调用模型
-            response = await self.llm_service.chat(prompt)
-            model_calls += 1
+        builder.add_edge(START, "agent")
 
-            # 如果没有可用工具，且模型输出了动作，检查是否可以用回答代替
-            if not self.tools:
-                # 没有工具，直接返回回答
-                return {
-                    "answer": response,
-                    "model_calls": model_calls,
-                    "tool_calls": tool_calls,
-                    "used_tools": used_tools,
-                    "trace": {"steps": trace_steps}
-                }
+        builder.add_conditional_edges(
+            "agent",
+            self._router,
+            {"tools": "tools", END: END}
+        )
 
-            # 解析动作
-            action = self._parse_action(response)
-            if action is None:
-                # 没有动作，返回当前回答
-                return {
-                    "answer": response,
-                    "model_calls": model_calls,
-                    "tool_calls": tool_calls,
-                    "used_tools": used_tools,
-                    "trace": {"steps": trace_steps}
-                }
+        builder.add_edge("tools", "agent")
 
-            tool_name = action.get("tool")
-            tool_params = action.get("params", {})
+        return builder.compile()
 
-            # 检查工具调用限制
-            if tool_calls >= self.tool_call_limit:
-                return {
-                    "answer": "已达到最大工具调用次数限制",
-                    "model_calls": model_calls,
-                    "tool_calls": tool_calls,
-                    "used_tools": used_tools,
-                    "trace": {"steps": trace_steps},
-                    "error": "Tool call limit exceeded"
-                }
+    # ── Nodes ───────────────────────────────────────────
 
-            # 查找并执行工具
-            tool_result = None
-            for tool in self.tools:
-                if tool.name == tool_name:
-                    tool_result = await tool.execute(**tool_params)
-                    tool_calls += 1
-                    used_tools.append(tool_name)
-                    break
+    async def _agent_node(self, state: ReActState) -> Dict:
+        """Agent 节点：构建 prompt、调用 LLM、解析 action"""
+        prompt = self._build_react_prompt(
+            state["question"],
+            list(state.get("messages", [])),
+        )
 
-            if tool_result is None:
-                tool_result = f"工具 {tool_name} 不存在"
+        response_text = await self.llm_service.chat(prompt)
+        model_calls = state.get("model_calls", 0) + 1
 
-            # 如果工具不存在，直接返回回答（不再继续循环）
-            if "不存在" in tool_result:
-                return {
-                    "answer": response,
-                    "model_calls": model_calls,
-                    "tool_calls": tool_calls,
-                    "used_tools": used_tools,
-                    "trace": {"steps": trace_steps}
-                }
+        if not self.tools:
+            return {
+                "messages": [{"role": "assistant", "content": response_text}],
+                "model_calls": model_calls,
+                "final_answer": response_text,
+            }
 
-            trace_steps.append({
-                "step": step + 1,
-                "model_output": response,
-                "tool": tool_name,
-                "tool_params": tool_params,
-                "tool_result": tool_result
-            })
-
-            observation = f"工具 {tool_name} 返回: {tool_result}"
-            history.append({"role": "assistant", "content": response})
-            history.append({"role": "system", "content": observation})
+        action = self._parse_action(response_text)
+        if action is None:
+            return {
+                "messages": [{"role": "assistant", "content": response_text}],
+                "model_calls": model_calls,
+                "final_answer": response_text,
+            }
 
         return {
-            "answer": observation,
+            "messages": [{"role": "assistant", "content": response_text}],
             "model_calls": model_calls,
-            "tool_calls": tool_calls,
-            "used_tools": used_tools,
-            "trace": {"steps": trace_steps}
+            "pending_tool_name": action.get("tool", ""),
+            "pending_tool_params": action.get("params", {}),
         }
 
-    def _build_react_prompt(self, query: str, history: List[Dict], observation: str) -> str:
-        """构建ReAct提示词"""
-        tools_desc = "\n".join([f"- {t.name}: {t.description}" for t in self.tools])
+    async def _tools_node(self, state: ReActState) -> Dict:
+        """Tools 节点：执行工具并返回观察结果"""
+        tool_name = state.get("pending_tool_name", "")
+        tool_params = state.get("pending_tool_params", {})
+        tool_calls = state.get("tool_calls", 0) + 1
 
-        history_text = "\n".join([
-            f"{h['role']}: {h['content']}"
-            for h in history[-6:]
+        tool = self.tools.get(tool_name)
+        step = len(state.get("trace_steps", [])) + 1
+
+        if tool is None:
+            observation = f"工具 {tool_name} 不存在"
+            trace_entry = {
+                "step": step,
+                "tool": tool_name,
+                "tool_params": tool_params,
+                "tool_result": observation,
+            }
+            return {
+                "messages": [{"role": "system", "content": observation}],
+                "tool_calls": tool_calls,
+                "used_tools": [tool_name],
+                "trace_steps": [trace_entry],
+                "final_answer": state["messages"][-1]["content"] if state.get("messages") else "",
+            }
+
+        try:
+            tool_result = await tool.execute(**tool_params)
+        except Exception as e:
+            tool_result = f"工具执行失败: {str(e)}"
+
+        observation = f"工具 {tool_name} 返回: {tool_result}"
+        trace_entry = {
+            "step": step,
+            "tool": tool_name,
+            "tool_params": tool_params,
+            "tool_result": tool_result,
+        }
+
+        return {
+            "messages": [
+                {"role": "system", "content": observation},
+            ],
+            "tool_calls": tool_calls,
+            "used_tools": [tool_name],
+            "trace_steps": [trace_entry],
+            "pending_tool_name": "",
+            "pending_tool_params": {},
+        }
+
+    # ── Router ──────────────────────────────────────────
+
+    def _router(self, state: ReActState) -> str:
+        """条件路由：有工具调用且未超限 → tools，否则 → END"""
+        final_answer = state.get("final_answer", "")
+        if final_answer:
+            return END
+
+        # 错误状态
+        if state.get("error"):
+            return END
+
+        model_calls = state.get("model_calls", 0)
+        if model_calls >= self.model_call_limit:
+            return END
+
+        tool_calls = state.get("tool_calls", 0)
+        if tool_calls >= self.tool_call_limit:
+            return END
+
+        pending_tool = state.get("pending_tool_name", "")
+        if pending_tool and pending_tool in self.tools:
+            return "tools"
+
+        return END
+
+    # ── Public API ──────────────────────────────────────
+
+    async def execute(self, question: str, history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """执行 ReAct 循环（非流式）"""
+        history = history or []
+        initial_messages = []
+        for h in history:
+            initial_messages.append(h)
+
+        initial_state: ReActState = {
+            "messages": initial_messages,
+            "question": question,
+            "model_calls": 0,
+            "tool_calls": 0,
+            "used_tools": [],
+            "trace_steps": [],
+            "pending_tool_name": "",
+            "pending_tool_params": {},
+            "final_answer": "",
+            "error": "",
+        }
+
+        result = await self._graph.ainvoke(initial_state)
+
+        return {
+            "answer": result.get("final_answer", "") or self._extract_last_answer(result.get("messages", [])),
+            "model_calls": result.get("model_calls", 0),
+            "tool_calls": result.get("tool_calls", 0),
+            "used_tools": list(result.get("used_tools", [])),
+            "trace": {"steps": list(result.get("trace_steps", []))},
+            "error": result.get("error") or None,
+        }
+
+    async def execute_stream(self, question: str, history: List[Dict[str, Any]] = None) -> AsyncIterator[str]:
+        """执行 ReAct 循环（流式），逐 token yield
+
+        注：LangGraph 0.2.0 的 astream() 只支持节点级事件，不支持 per-token 流式。
+        因此流式路径使用手动循环，直接调用 llm_service.chat_stream() 实现 token 级流式。
+        非流式路径 execute() 使用 LangGraph StateGraph。
+        """
+        history = history or []
+        messages = list(history)
+        model_calls = 0
+        tool_calls = 0
+
+        for step in range(self.max_steps):
+            if model_calls >= self.model_call_limit:
+                yield f"\n\n[已达到最大模型调用次数限制]"
+                break
+
+            prompt = self._build_react_prompt(question, messages)
+            full_response = ""
+
+            async for token in self.llm_service.chat_stream(prompt):
+                full_response += token
+                yield token
+
+            model_calls += 1
+
+            if not self.tools:
+                break
+
+            action = self._parse_action(full_response)
+            if action is None:
+                break
+
+            tool_name = action.get("tool", "")
+            tool_params = action.get("params", {})
+
+            if tool_calls >= self.tool_call_limit:
+                yield f"\n\n[已达到最大工具调用次数限制]"
+                break
+
+            tool = self.tools.get(tool_name)
+            if tool is None:
+                break
+
+            try:
+                tool_result = await tool.execute(**tool_params)
+            except Exception as e:
+                tool_result = f"工具执行失败: {str(e)}"
+
+            tool_calls += 1
+
+            observation = f"工具 {tool_name} 返回: {tool_result}"
+            messages.append({"role": "assistant", "content": full_response})
+            messages.append({"role": "system", "content": observation})
+
+    # ── Prompt helpers ──────────────────────────────────
+
+    def _build_react_prompt(self, query: str, history: List[Dict]) -> str:
+        """构建ReAct提示词"""
+        tools_desc = "\n".join([
+            f"- {t.name}: {t.description}" for t in self.tools.values()
         ])
+
+        history_lines = []
+        for h in history[-6:]:
+            role = h.get("role", "")
+            content = h.get("content", "")
+            if role == "system":
+                history_lines.append(f"观察: {content}")
+            else:
+                history_lines.append(f"{role}: {content}")
+        history_text = "\n".join(history_lines)
 
         return f"""你是一个AI助手，可以调用工具来回答用户问题。
 
@@ -224,8 +358,6 @@ class ReActAgent:
 
 对话历史:
 {history_text}
-
-{'上一步观察: ' + observation if observation else ''}
 
 用户: {query}
 
@@ -248,18 +380,26 @@ class ReActAgent:
                 tool = line.replace("动作:", "").strip()
             elif line.startswith("参数:"):
                 try:
-                    import json
                     params = json.loads(line.replace("参数:", "").strip())
-                except:
+                except (json.JSONDecodeError, ValueError):
                     params = {}
 
         if tool:
             return {"tool": tool, "params": params}
         return None
 
+    def _extract_last_answer(self, messages: List[Dict]) -> str:
+        """从消息列表中提取最后的回答"""
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant":
+                return msg.get("content", "")
+        return ""
+
+
+# ── Interceptors ───────────────────────────────────────
 
 class RetryInterceptor:
-    """工具重试拦截器 - 对标Java的ToolRetryInterceptor"""
+    """工具重试拦截器 - """
 
     def __init__(self, max_retries: int = 2, initial_delay: float = 0.2, max_delay: float = 1.2):
         self.max_retries = max_retries
@@ -277,7 +417,6 @@ class RetryInterceptor:
             except Exception as e:
                 last_error = e
                 if attempt < self.max_retries:
-                    # 指数退避 + 随机抖动
                     import random
                     jitter = random.uniform(0, 0.1 * delay)
                     await asyncio.sleep(delay + jitter)
@@ -287,7 +426,7 @@ class RetryInterceptor:
 
 
 class ErrorInterceptor:
-    """错误拦截器 - 对标Java的ToolErrorInterceptor"""
+    """错误拦截器 -"""
 
     def __init__(self, fallback_value: str = "工具执行失败"):
         self.fallback_value = fallback_value

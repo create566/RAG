@@ -35,7 +35,8 @@ class MCPToolProvider:
                         "clientInfo": {"name": "super-agent", "version": "1.0.0"}
                     }
                 }
-                await client.post(server_endpoint, json=init_request)
+                resp = await client.post(server_endpoint, json=init_request, headers={"Accept": "text/event-stream"})
+                resp = await client.post(server_endpoint, json=init_request)
 
                 # 发送 tools/list 请求
                 list_request = {
@@ -106,6 +107,8 @@ class MCPToolProvider:
             endpoint=endpoint
         )
         self._manifests[endpoint] = manifest
+        if endpoint not in self.servers:
+            self.servers.append(endpoint)
         logger.info(f"[MCP] Added server: {name or endpoint}")
 
     async def discover_all_servers(self) -> List[MCPTool]:

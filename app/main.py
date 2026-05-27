@@ -6,9 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.config import get_settings
+from app.core.logging import setup_logging
 from app.api import chat_router, document_router, auth_router
 
 settings = get_settings()
+setup_logging()
 
 
 @asynccontextmanager

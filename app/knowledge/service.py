@@ -49,14 +49,9 @@ class KnowledgeRouteService:
                 ]
             )
 
-        # 快速关键词预筛：问题与文档名完全无交集 → 跳过 LLM
+        # 快速关键词预筛：问题与文档名完全无交集 → 降低置信度但不跳过
         if not self._quick_match(question, documents):
-            logger.info(f"关键词预筛无匹配，跳过 LLM 路由 → 降级 LLM 回答")
-            return KnowledgeRouteDecision(
-                confidence=0.0,
-                route_status="no_match",
-                documents=[]
-            )
+            logger.info(f"关键词预筛无匹配，继续 LLM 路由判断（降低置信度）")
 
         # 使用LLM进行路由决策
         routing_prompt = f"""分析用户问题，确定最相关的文档。

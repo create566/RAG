@@ -125,6 +125,9 @@ class DocumentService:
                 chunk_ids.append(chunk_id)
                 valid_chunks.append(chunk)
 
+                # 提取章节标题作为 section_path
+                section_path = _extract_section_title(chunk, i)
+
                 embedding = await self.llm_service.embed(chunk)
                 if not embedding or len(embedding) == 0:
                     if embedding_ok:
@@ -138,7 +141,7 @@ class DocumentService:
                     "document_id": doc_id,
                     "document_name": file_name,
                     "chunk_id": chunk_id,
-                    "section_path": f"chunk_{i}",
+                    "section_path": section_path,
                     "user_id": user_id if user_id else 0,
                 })
 
@@ -306,7 +309,7 @@ class DocumentService:
                     "document_name": meta.get("document_name", ""),
                     "chunk_id": meta.get("chunk_id", ""),
                     "parent_id": meta.get("parent_id", ""),
-                    "section_path": meta.get("section_path", f"chunk_{i}"),
+                    "section_path": meta.get("section_path", f"第{i + 1}节"),
                     "user_id": meta.get("user_id", 0),
                 }
                 self.es_client.index(
@@ -356,6 +359,23 @@ class DocumentService:
             chapters.append((current["title"], current["content"]))
 
         return chapters or [("全文", "\n".join(chunks))]
+
+
+def _extract_section_title(chunk: str, index: int) -> str:
+    """从chunk内容中提取章节标题作为section_path"""
+    lines = chunk.strip().split("\n")
+    for line in lines[:5]:  # 只检查前5行
+        line = line.strip()
+        # 匹配 ## 标题
+        if line.startswith("## "):
+            return line.replace("## ", "").strip()[:50]
+        # 匹配 第X章 标题
+        if re.match(r"^第[一二三四五六七八九十\d]+章", line):
+            return line.strip()[:50]
+        # 匹配 一、标题 或 1. 标题
+        if re.match(r"^[一二三四五六七八九十\d]+[、、.]", line):
+            return line.strip()[:50]
+    return f"第{index + 1}节"
 
 
 _document_service = None

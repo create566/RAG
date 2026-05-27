@@ -40,8 +40,18 @@ class RagPromptAssemblyService:
                 if len(content) > self.per_sub_question_budget:
                     content = self._truncate_at_paragraph_boundary(content, self.per_sub_question_budget)
 
+                # 获取来源信息
+                doc_name = ref.get("document_name", "未知文档")
+                section_path = ref.get("section_path", "")
+                chunk_index = ref.get("chunk_index", 0)
+
                 ref_id = f"[{ref_idx}]"
-                sq_text += f"{ref_id} {content}\n"
+                source_info = f"{ref_id} {content}"
+                if section_path:
+                    source_info += f"\n   来源：{doc_name} / {section_path}"
+                else:
+                    source_info += f"\n   来源：{doc_name}"
+                sq_text += source_info + "\n"
                 reference_id_map.append(ref)
                 ref_idx += 1
 
@@ -54,10 +64,11 @@ class RagPromptAssemblyService:
         system_prompt = f"""你是一个基于文档的知识助手。你的职责是：
 1. 仅基于提供的证据回答用户问题
 2. 如果证据不足，明确告知用户
-3. 在回答时标注来源编号，如 [1][2]
-4. 保持回答准确、简洁
 
-证据来源格式：[编号] 内容
+重要格式要求：
+- 每条证据的来源格式：【文件名】章节名
+- 回答时必须显示完整来源，例如："根据【差旅与费用报销管理办法】3.2 提前申请时限..."
+- 不要省略来源信息，不要只写 [1]，要写完整
 """
 
         # 构建用户Prompt
@@ -68,8 +79,9 @@ class RagPromptAssemblyService:
 
 请基于以上证据回答用户问题。要求：
 1. 仅使用提供的证据
-2. 在引用时使用 [编号] 格式
+2. 在引用时使用 [编号] 格式，如 [1][2]
 3. 如果无法回答，明确说明
+4. 重要：回答时必须标注来源，格式为：内容 [编号]（来自【文件名】第X章）
 """
 
         logger.info(f"[PROMPT] Assembled - system_prompt: {len(system_prompt)} chars, user_prompt: {len(user_prompt)} chars, evidence: {len(all_evidence)} chars")

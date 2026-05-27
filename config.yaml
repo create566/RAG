@@ -26,7 +26,7 @@ document:
 embedding:
   dashscope:
     dimension: 1536
-    model: text-embedding-v1
+    model: text-embeddi ng-v1
   provider: dashscope
 graph_db:
   neo4j:
@@ -44,17 +44,9 @@ llm:
   dashscope:
     api_key: ${DASHSCOPE_API_KEY}
     max_tokens: 4096
-    model: qwen-max
+    model: qwen-turbo
     temperature: 0.7
   provider: dashscope
-mcp:
-  servers:
-  - enabled: false
-    endpoint: http://localhost:8080/mcp
-    name: filesystem
-  - enabled: false
-    endpoint: http://localhost:8081/mcp
-    name: calculator
 memory:
   recent_max_chars: 2200
   recent_turns: 4
@@ -91,32 +83,18 @@ retrieval:
   parent_chunk_size: 2000
   rrf_k: 60
   vector_top_k: 10
-search:
-  duckduckgo:
-    max_results: 5
 server:
   host: 0.0.0.0
   port: 8001
   reload: false
-skills:
-- description: 网页搜索和信息查询
-  enabled: true
-  name: web_search
-  prompt_template: 你是一个专业的搜索助手，擅长从互联网获取最新信息来回答用户问题。
-  tools:
-  - tavily_search
-- description: 编程和代码分析
-  enabled: true
-  name: code_expert
-  prompt_template: 你是一个资深程序员，擅长解答编程问题和代码优化。
-  tools: []
-- description: 通用对话
-  enabled: true
-  name: general
-  prompt_template: 你是一个友好的AI助手，能够回答各种问题。
-  tools: []
 vector_store:
   chroma:
     collection_name: super_agent_docs
     persist_directory: ./data/chroma
   provider: chroma
+
+mcp:
+  servers:
+    - name: "weather"
+      endpoint: "http://localhost:8090/mcp"
+      enabled: true

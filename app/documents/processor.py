@@ -20,7 +20,6 @@ class ChunkStrategy:
         if not headers:
             headers = ["#", "##", "###", "第", "章", "节", "一、", "二、", "三、"]
         paragraphs = text.split("\n\n")
-        # 如果没有明显段落结构，按行处理
         if len(paragraphs) <= 1:
             paragraphs = text.split("\n")
 

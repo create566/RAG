@@ -2,7 +2,7 @@
 LLM服务 - 对标Java的ObservedChatModelService
 支持多种大模型：DashScope、OpenAI、Anthropic
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, AsyncIterator
 import asyncio
 import os
 
@@ -55,10 +55,11 @@ class DashScopeLLMService(BaseLLMService):
                     messages=messages,
                     max_tokens=kwargs.get("max_tokens", 4096),
                     temperature=kwargs.get("temperature", 0.7),
-                    top_p=kwargs.get("top_p", 0.8)
+                    top_p=kwargs.get("top_p", 0.8),
+                    request_timeout=180,  # 180秒超时（qwen-max 响应较慢）
                 )
 
-            response = await asyncio.to_thread(_call)
+            response = await asyncio.wait_for(asyncio.to_thread(_call), timeout=190)
 
             if response.status_code == 200:
                 output = response.output
@@ -67,8 +68,65 @@ class DashScopeLLMService(BaseLLMService):
                 return output.get("text", "")
             else:
                 return f"API调用失败: {response.message}"
+        except asyncio.TimeoutError:
+            return "API调用超时（190秒）"
         except Exception as e:
             return f"调用失败: {str(e)}"
+
+    async def chat_stream(self, prompt: str, system_prompt: str = None, **kwargs) -> AsyncIterator[str]:
+        """流式调用DashScope API - 逐token yield"""
+        import dashscope
+        from dashscope import Generation
+
+        dashscope.api_key = self.api_key
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        def _stream():
+            try:
+                responses = Generation.call(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                    incremental_output=True,
+                    max_tokens=kwargs.get("max_tokens", 4096),
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.8),
+                    request_timeout=180,  # 180秒超时（qwen-max 响应较慢）
+                )
+                for response in responses:
+                    if response.status_code == 200:
+                        if response.output:
+                            text = response.output.get("text", "")
+                            if text:
+                                loop.call_soon_threadsafe(queue.put_nowait, ("token", text))
+                    else:
+                        loop.call_soon_threadsafe(
+                            queue.put_nowait,
+                            ("error", f"API调用失败: {response.message}")
+                        )
+                        return
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+            except Exception as e:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", f"调用失败: {str(e)}"))
+
+        loop.run_in_executor(None, _stream)
+
+        while True:
+            event_type, data = await queue.get()
+            if event_type == "done":
+                break
+            elif event_type == "error":
+                yield data
+                break
+            else:
+                yield data
 
     async def embed(self, text: str) -> List[float]:
         """获取文本嵌入（带重试）"""

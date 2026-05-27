@@ -180,6 +180,13 @@ class AgentExecutor(BaseExecutor):
             error=result.get("error")
         )
 
+    async def execute_stream(self, task_info: Dict[str, Any]) -> AsyncIterator[str]:
+        """流式执行Agent - 逐token yield"""
+        question = task_info.get("question", "")
+        history = task_info.get("history", [])
+        async for token in self.react_agent.execute_stream(question, history):
+            yield token
+
 
 class ExecutorRegistry:
     """执行器注册中心 - 对标Java的ConversationExecutorRegistry"""

@@ -25,17 +25,20 @@ async def chat(request: ChatRequest):
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
-    """流式聊天接口"""
+    """流式聊天接口 — 逐 token SSE 推送"""
+    service = get_chat_service()
+    conv_id = request.conversation_id or f"conv_{hash(request.question)}_{id(request)}"
+    request.conversation_id = conv_id
+
     async def generate():
         try:
-            service = get_chat_service()
-            response = await service.chat(request)
-            answer_text = response.answer if response.answer else "无响应"
-            conv_id = response.conversation_id
-            yield f"data: {json.dumps({'answer': answer_text, 'conversation_id': conv_id, 'done': True}, ensure_ascii=False)}\n\n"
+            async for token in service.chat_stream(request):
+                yield f"data: {json.dumps({'answer': token, 'done': False}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'answer': '', 'done': True, 'conversation_id': conv_id}, ensure_ascii=False)}\n\n"
         except Exception as e:
             import traceback
-            error_msg = f"错误: {e}\n{traceback.format_exc()}"
+            error_msg = f"错误: {e}"
+            traceback.print_exc()
             yield f"data: {json.dumps({'answer': error_msg, 'done': True}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
