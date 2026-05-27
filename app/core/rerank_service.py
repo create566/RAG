@@ -11,10 +11,11 @@ logger = get_logger(__name__)
 class SiliconFlowRerankService:
     """SiliconFlow Rerank 服务"""
 
-    def __init__(self, api_key: str, model: str = "BAAI/bge-reranker-base"):
+    def __init__(self, api_key: str, model: str = "BAAI/bge-reranker-base", min_score: float = 0.3):
         self.api_key = api_key
         self.model = model
         self.endpoint = "https://api.siliconflow.cn/v1/rerank"
+        self.min_score = min_score  # 最低相关分阈值，低于此分的结果会被过滤
 
     async def rerank(self, query: str, results: List[Dict], top_k: int = 5) -> List[Dict]:
         """
@@ -65,19 +66,25 @@ class SiliconFlowRerankService:
                     data = response.json()
                     rerank_results = data.get("results", [])
 
-                    # 按 rerank 分数重新排序
+                    # 按 rerank 分数重新排序，并过滤低分结果
                     reranked = []
                     for item in rerank_results:
                         idx = item.get("index", 0)
+                        relevance_score = item.get("relevance_score", 0)
+                        # 过滤掉低于阈值的低相关结果
+                        if relevance_score < self.min_score:
+                            logger.info(f"[RERANK] Filtered result (score={relevance_score:.3f} < {self.min_score})")
+                            continue
                         if idx < len(results):
                             r = results[idx]
                             # 兼容 RetrievalResult (dataclass) 和 dict
                             if hasattr(r, 'content'):
                                 from dataclasses import asdict
                                 r = asdict(r)
-                            r["rerank_score"] = item.get("relevance_score", 0)
+                            r["rerank_score"] = relevance_score
                             reranked.append(r)
 
+                    logger.info(f"[RERANK] Returned {len(reranked)}/{len(results)} results (min_score={self.min_score})")
                     return reranked
                 else:
                     logger.warning(f"[RERANK] 请求失败: {response.status_code}")

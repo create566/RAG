@@ -138,6 +138,7 @@ class RerankConfig(BaseModel):
     provider: str = "siliconflow"
     api_key: str = ""
     model: str = "BAAI/bge-reranker-v2-m3"
+    min_score: float = 0.3  # 最低相关分阈值，低于此分的结果会被过滤
 
 
 # ── 顶层 Settings ───────────────────────────────────────
@@ -262,6 +263,7 @@ class Settings(BaseSettings):
             provider=rerank_provider,
             api_key=resolve_env(si_cfg.get("api_key", "")),
             model=si_cfg.get("model", "BAAI/bge-reranker-v2-m3"),
+            min_score=si_cfg.get("min_score", 0.3),
         )
 
         # 解析内存配置

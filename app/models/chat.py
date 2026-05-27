@@ -48,6 +48,7 @@ class SourceReference(BaseModel):
     section_path: str
     channel: str
     score: Optional[float] = None
+    content: Optional[str] = None  # 实际chunk内容，用于评估
 
 
 class ChatResponse(BaseModel):

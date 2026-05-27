@@ -104,7 +104,7 @@ services:
       - super-agent-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:9200/_cluster/health | grep -E '200|401' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -118,7 +118,7 @@ services:
       - "7687:7687"
     environment:
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-password}
-      - NEO4J_PLUGINS='["apoc"]'
+      - NEO4J_PLUGINS=["apoc"]
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -154,7 +154,7 @@ services:
 
   # Kafka - 异步消息队列
   kafka:
-    image: bitnami/kafka:3.6
+    image: confluentinc/cp-kafka:7.5.0
     container_name: super-kafka
     ports:
       - "9092:9092"

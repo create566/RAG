@@ -1,6 +1,5 @@
 """
 图查询引擎模块
-对标 Java 的 GraphQueryEngine
 定义图查询接口和 Neo4j 实现
 """
 from abc import ABC, abstractmethod

@@ -45,7 +45,7 @@ llm:
     api_key: ${DASHSCOPE_API_KEY}
     max_tokens: 4096
     model: qwen-turbo
-    temperature: 0.7
+    temperature: 0.3
   provider: dashscope
 memory:
   recent_max_chars: 2200
@@ -79,7 +79,7 @@ retrieval:
   keyword_top_k: 10
   max_parent_chunks: 5
   min_keyword_score: 0.05
-  min_vector_similarity: 0.08
+  min_vector_similarity: 0.8
   parent_chunk_size: 2000
   rrf_k: 60
   vector_top_k: 10

@@ -60,10 +60,12 @@ class RagPromptAssemblyService:
         # 合并所有证据
         all_evidence = "\n\n".join(evidence_parts)
 
-        # 构建系统Prompt
-        system_prompt = f"""你是一个基于文档的知识助手。你的职责是：
-1. 仅基于提供的证据回答用户问题
-2. 如果证据不足，明确告知用户
+        # 构建系统Prompt - 严格忠实约束
+        system_prompt = """你是严格基于上下文的问答助手，必须遵守以下规则：
+1. 只允许使用上下文提供的信息回答，严禁脑补、拓展、篡改、新增任何内容
+2. 上下文没有提到的信息，一律回答"无相关信息"，禁止自行发挥
+3. 严格忠于原文条款，不修改数值、不增减规则、不合并条件
+4. 精简作答，只输出核心答案，不冗余、不堆砌无关内容
 
 重要格式要求：
 - 每条证据的来源格式：【文件名】章节名
@@ -77,11 +79,11 @@ class RagPromptAssemblyService:
 证据:
 {all_evidence}
 
-请基于以上证据回答用户问题。要求：
-1. 仅使用提供的证据
-2. 在引用时使用 [编号] 格式，如 [1][2]
-3. 如果无法回答，明确说明
-4. 重要：回答时必须标注来源，格式为：内容 [编号]（来自【文件名】第X章）
+请严格基于以上证据回答，遵守以下规则：
+1. 只使用提供的证据，禁止脑补、发挥、篡改
+2. 上下文没有的信息，一律回答"无相关信息"
+3. 引用时使用 [编号] 格式，如 [1][2]，并附完整来源：【文件名】第X章
+4. 精简输出，不堆砌无关内容
 """
 
         logger.info(f"[PROMPT] Assembled - system_prompt: {len(system_prompt)} chars, user_prompt: {len(user_prompt)} chars, evidence: {len(all_evidence)} chars")

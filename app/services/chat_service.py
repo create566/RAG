@@ -73,6 +73,7 @@ class ChatService:
             self.rerank_service = SiliconFlowRerankService(
                 api_key=settings.rerank.api_key,
                 model=settings.rerank.model,
+                min_score=settings.rerank.min_score,
             )
         else:
             self.rerank_service = None
@@ -493,12 +494,15 @@ class ChatService:
                 from app.models.chat import SourceReference
                 for ref in refs[:5]:
                     if isinstance(ref, dict):
-                        sources.append({
-                            "reference_id": str(ref.get("reference_id", "")),
-                            "document_name": str(ref.get("document_name", "")),
-                            "section_path": str(ref.get("section_path", "")),
-                            "channel": str(ref.get("channel", "")),
-                        })
+                        sources.append(SourceReference(
+                            reference_id=str(ref.get("reference_id", "")),
+                            document_name=str(ref.get("document_name", "")),
+                            section_path=str(ref.get("section_path", "")),
+                            channel=str(ref.get("channel", "")),
+                            content=str(ref.get("content_preview", "")) or str(ref.get("content", "")),
+                        ))
+                    elif hasattr(ref, 'reference_id'):
+                        sources.append(ref)
         except Exception as e:
             logger.warning(f"构建来源失败: {e}")
         return sources
