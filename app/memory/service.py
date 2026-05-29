@@ -179,7 +179,10 @@ class MySQLMemoryStrategy(MemoryStrategy):
                  recent_max_chars: int = 2200,
                  summary_max_turns: int = 6,
                  summary_max_chars: int = 1400,
-                 llm_service=None):
+                 llm_service=None,
+                 redis_cache=None,
+                 embedding_service=None,
+                 conversation_memory_store=None):
         import pymysql
         from pymysql.cursors import DictCursor
 
@@ -193,6 +196,9 @@ class MySQLMemoryStrategy(MemoryStrategy):
         self.summary_max_turns = summary_max_turns
         self.summary_max_chars = summary_max_chars
         self.llm_service = llm_service
+        self.redis_cache = redis_cache
+        self.embedding_service = embedding_service
+        self.conversation_memory_store = conversation_memory_store
 
         self._connection_params = {
             "host": host,
@@ -263,6 +269,39 @@ class MySQLMemoryStrategy(MemoryStrategy):
             conn.close()
 
     async def get_context(self, conversation_id: str, user_id: int, history: List[Dict[str, Any]]) -> str:
+        # 先查 Redis 缓存
+        if self.redis_cache:
+            cached = await self.redis_cache.get_recent(conversation_id, count=self.recent_turns)
+            if cached:
+                # 从 Redis 构建上下文
+                parts = []
+                # 从 MySQL 获取摘要
+                conn = await asyncio.to_thread(self._get_connection)
+                try:
+                    with conn.cursor() as cursor:
+                        await asyncio.to_thread(cursor.execute,
+                            "SELECT summary FROM conversation_summary WHERE conversation_id = %s AND user_id = %s",
+                            (conversation_id, user_id)
+                        )
+                        row = await asyncio.to_thread(cursor.fetchone)
+                        if row and row["summary"]:
+                            parts.append(f"【会话摘要】\n{row['summary']}")
+                finally:
+                    conn.close()
+
+                if cached:
+                    recent = [f"用户: {m['content']}\n助手: " for m in cached if m.get("role") == "user"]
+                    # 重建 recent 对话格式
+                    formatted = []
+                    for i in range(0, len(cached) - 1, 2):
+                        if i + 1 < len(cached):
+                            if cached[i].get("role") == "user" and cached[i + 1].get("role") == "assistant":
+                                formatted.append(f"用户: {cached[i]['content']}\n助手: {cached[i + 1]['content']}")
+                    if formatted:
+                        parts.append(f"【最近对话】\n" + "\n".join(formatted[-self.recent_turns:]))
+                return "\n\n".join(parts) if parts else ""
+
+        # Redis miss，查 MySQL
         conn = await asyncio.to_thread(self._get_connection)
         try:
             with conn.cursor() as cursor:
@@ -300,6 +339,10 @@ class MySQLMemoryStrategy(MemoryStrategy):
             conn.close()
 
     async def save_exchange(self, conversation_id: str, user_id: int, user_message: str, assistant_message: str):
+        # 同时写入 Redis 缓存
+        if self.redis_cache:
+            await self.redis_cache.append_exchange(conversation_id, user_message, assistant_message)
+
         conn = await asyncio.to_thread(self._get_connection)
         try:
             with conn.cursor() as cursor:
@@ -361,9 +404,35 @@ class MySQLMemoryStrategy(MemoryStrategy):
                         (combined, conversation_id, user_id)
                     )
 
+                    # 存入向量库
+                    if self.embedding_service and self.conversation_memory_store and combined:
+                        await self._save_to_vector_store(combined, conversation_id, user_id, "summary")
+
             await asyncio.to_thread(conn.commit)
         finally:
             conn.close()
+
+    async def _save_to_vector_store(self, content: str, conversation_id: str, user_id: int, mem_type: str):
+        """保存记忆到向量库"""
+        try:
+            emb = await self.embedding_service.embed(content)
+            if emb and len(emb) > 0:
+                import uuid
+                from datetime import datetime
+                self.conversation_memory_store.add(
+                    documents=[content],
+                    embeddings=[emb],
+                    metadatas=[{
+                        "user_id": user_id,
+                        "conversation_id": conversation_id,
+                        "type": mem_type,
+                        "created_at": datetime.now().isoformat()
+                    }],
+                    ids=[str(uuid.uuid4())]
+                )
+        except Exception as e:
+            logger = get_logger(__name__)
+            logger.warning(f"[Memory] Failed to save to vector store: {e}")
 
 
 class ConversationMemoryService:

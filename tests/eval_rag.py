@@ -34,6 +34,7 @@ from app.models.chat import ChatRequest, ChatQueryMode
 from ragas.llms.base import LangchainLLMWrapper, RunConfig
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from langchain_dashscope import ChatDashScope, DashScopeEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 
 # ============================================================
@@ -176,19 +177,33 @@ async def run_evaluation():
         context_recall,        # 上下文召回率
     ]
 
-    # 5. 初始化 DashScope LLM 和 Embeddings
-    print("\n初始化评估用 LLM (DashScope)...")
+    # 5. 初始化 LLM 和 Embeddings（支持 DashScope / Ollama）
+    eval_provider = os.getenv("EVAL_LLM_PROVIDER", "dashscope")  # 可设为 "ollama"
+    print(f"\n初始化评估用 LLM ({eval_provider})...")
     run_cfg = RunConfig(timeout=120, max_retries=3, max_workers=4)
-    llm = LangchainLLMWrapper(ChatDashScope(
-        model="qwen-turbo",
-        api_key=os.getenv("DASHSCOPE_API_KEY") or settings.dashscope_api_key,
-    ), run_config=run_cfg)
-    embeddings = LangchainEmbeddingsWrapper(DashScopeEmbeddings(
-        model="text-embedding-v1",
-        api_key=os.getenv("DASHSCOPE_API_KEY") or settings.dashscope_api_key,
-    ), run_config=run_cfg)
-    print("  - LLM模型: qwen-turbo")
-    print("  - Embedding模型: text-embedding-v1")
+
+    if eval_provider == "ollama":
+        llm = LangchainLLMWrapper(ChatOllama(
+            model="gemma4:e4b",
+            base_url="http://localhost:11434",
+        ), run_config=run_cfg)
+        embeddings = LangchainEmbeddingsWrapper(DashScopeEmbeddings(
+            model="text-embedding-v1",
+            api_key=os.getenv("DASHSCOPE_API_KEY") or settings.dashscope_api_key,
+        ), run_config=run_cfg)
+        print("  - LLM模型: gemma4:e4b (Ollama)")
+        print("  - Embedding模型: gemma4:e4b (Ollama)")
+    else:
+        llm = LangchainLLMWrapper(ChatDashScope(
+            model="qwen-turbo",
+            api_key=os.getenv("DASHSCOPE_API_KEY") or settings.dashscope_api_key,
+        ), run_config=run_cfg)
+        embeddings = LangchainEmbeddingsWrapper(DashScopeEmbeddings(
+            model="text-embedding-v1",
+            api_key=os.getenv("DASHSCOPE_API_KEY") or settings.dashscope_api_key,
+        ), run_config=run_cfg)
+        print("  - LLM模型: qwen-turbo (DashScope)")
+        print("  - Embedding模型: text-embedding-v1 (DashScope)")
 
     # 将 embeddings 设置到需要它的指标
     answer_relevancy.embeddings = embeddings

@@ -40,7 +40,7 @@ function LoginPage() {
     <div className="login-container">
       <div className="login-box">
         <div className="login-header">
-          <h1>Super Agent</h1>
+          <h1>RAG智能检索</h1>
           <p>{isLogin ? '登录到您的账户' : '创建新账户'}</p>
         </div>
 

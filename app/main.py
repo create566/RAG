@@ -16,8 +16,18 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Super Agent Python Backend 启动中...")
+    # 启动文档处理 Worker（Redis Stream 消费者）
+    from app.core.document_worker import get_document_worker
+    worker = get_document_worker()
+    import asyncio
+    asyncio.create_task(worker.start())
     yield
     print("Super Agent Python Backend 关闭中...")
+    # 关闭 Worker
+    try:
+        await worker.stop()
+    except:
+        pass
 
 
 app = FastAPI(

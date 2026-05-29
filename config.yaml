@@ -24,16 +24,20 @@ document:
   default_strategy: structural,recursive
   max_child_chunks: 500
 embedding:
-  dashscope:
-    dimension: 1536
-    model: text-embeddi ng-v1
+  vllm:
+    model: Alibaba-NLP/gte-multilingual-base
+    base_url: http://localhost:8011/v1
+    dashscope:
+      model: text-embedding-v3
   provider: dashscope
+
 graph_db:
   neo4j:
     password: ${NEO4J_PASSWORD:-password}
     uri: bolt://localhost:7687
     username: neo4j
   provider: neo4j
+
 keyword_search:
   elasticsearch:
     hosts:
@@ -46,7 +50,16 @@ llm:
     max_tokens: 4096
     model: qwen-turbo
     temperature: 0.3
+  ollama:
+    model: gemma4:e4b
+    base_url: http://localhost:11434
+  vllm:
+    model: Qwen/Qwen2.5-1.5B-Instruct
+    base_url: http://localhost:8010/v1
+    temperature: 0.3
+    max_tokens: 2048
   provider: dashscope
+
 memory:
   recent_max_chars: 2200
   recent_turns: 4
@@ -54,10 +67,20 @@ memory:
   strategy: summary
   summary_max_chars: 1400
   summary_max_turns: 6
+
+
 message_queue:
   kafka:
     bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
     topic: super-agent-doc-processing
+
+redis:
+  host: ${REDIS_HOST:-localhost}
+  port: 6379
+  db: 9
+  password: ${REDIS_PASSWORD:-}
+  prefix: super_agent
+
 object_storage:
   minio:
     access_key: minioadmin
@@ -66,11 +89,14 @@ object_storage:
     secret_key: minioadmin
     secure: false
   provider: minio
+
 rerank:
   provider: siliconflow
   siliconflow:
     api_key: ${SILICONFLOW_API_KEY}
     model: BAAI/bge-reranker-v2-m3
+
+
 retrieval:
   child_chunk_size: 500
   enable_semantic_compress: true
@@ -79,14 +105,16 @@ retrieval:
   keyword_top_k: 10
   max_parent_chunks: 5
   min_keyword_score: 0.05
-  min_vector_similarity: 0.8
+  min_vector_similarity: 0.08
   parent_chunk_size: 2000
-  rrf_k: 60
+  rrf_k: 50
   vector_top_k: 10
+
 server:
   host: 0.0.0.0
   port: 8001
   reload: false
+
 vector_store:
   chroma:
     collection_name: super_agent_docs

@@ -88,3 +88,65 @@ def create_vector_store(config: Dict = None) -> ChromaVectorStore:
         persist_directory=config.get("persist_directory", "./data/chroma"),
         collection_name=config.get("collection_name", "super_agent_docs")
     )
+
+
+class ConversationMemoryStore:
+    """对话记忆向量存储"""
+
+    COLLECTION_NAME = "conversation_memory"
+
+    def __init__(self, persist_directory: str = "./data/chroma"):
+        self.persist_directory = persist_directory
+        self._client = None
+        self._collection = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = chromadb.PersistentClient(
+                path=self.persist_directory,
+                settings=Settings(anonymized_telemetry=False)
+            )
+        return self._client
+
+    @property
+    def collection(self):
+        if self._collection is None:
+            try:
+                self._collection = self.client.get_collection(name=self.COLLECTION_NAME)
+            except Exception:
+                self._collection = self.client.create_collection(
+                    name=self.COLLECTION_NAME,
+                    metadata={"description": "Conversation Memory Vector Store"}
+                )
+        return self._collection
+
+    def add(self, documents: List[str], embeddings: List[List[float]], metadatas: List[Dict], ids: List[str]):
+        """添加对话记忆"""
+        self.collection.add(
+            documents=documents,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            ids=ids
+        )
+
+    def query(self, query_embeddings: List[List[float]], n_results: int = 5, where: Dict = None) -> Dict:
+        """检索相似记忆"""
+        return self.collection.query(
+            query_embeddings=query_embeddings,
+            n_results=n_results,
+            where=where,
+            include=["documents", "metadatas", "distances"]
+        )
+
+    def delete_by_conversation(self, conversation_id: str):
+        """删除某会话的所有记忆"""
+        self.collection.delete(where={"conversation_id": conversation_id})
+
+    def count(self) -> int:
+        return self.collection.count()
+
+
+def create_conversation_memory_store(persist_directory: str = "./data/chroma") -> ConversationMemoryStore:
+    """工厂方法创建对话记忆存储"""
+    return ConversationMemoryStore(persist_directory=persist_directory)

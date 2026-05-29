@@ -175,6 +175,51 @@ class DocumentService:
             status=status,
         )
 
+    async def queue_upload(self, file, document_name: str = None, user_id: int = None, chunk_strategy: str = None):
+        """将文档放入 Redis Stream 异步队列"""
+        from app.models.document import Document
+
+        doc_id = str(uuid.uuid4())
+        original_filename = file.filename
+        file_name = document_name or original_filename
+
+        content = await file.read()
+        local_path = f"./data/uploads/{doc_id}_{original_filename}"
+        os.makedirs("./data/uploads", exist_ok=True)
+        with open(local_path, 'wb') as f:
+            f.write(content)
+
+        # 发送消息到 Redis Stream
+        from app.core.redis_client import create_redis_cache
+        from app.config import get_settings
+        from app.utils.env import resolve_env
+        settings = get_settings()
+        redis_cfg = {}
+        if hasattr(settings, 'redis'):
+            redis_cfg = {
+                "host": resolve_env(settings.redis.host) if hasattr(settings.redis, 'host') else "localhost",
+                "port": settings.redis.port if hasattr(settings.redis, 'port') else 6379,
+                "db": settings.redis.db if hasattr(settings.redis, 'db') else 0,
+            }
+        redis_cache = create_redis_cache(redis_cfg)
+        await redis_cache.xadd("document_processing", {
+            "doc_id": doc_id,
+            "file_path": local_path,
+            "file_name": file_name,
+            "user_id": str(user_id) if user_id else "0",
+            "chunk_strategy": chunk_strategy or "",
+        })
+        await redis_cache.close()
+
+        return Document(
+            id=int(doc_id[:8], 16) if doc_id else None,
+            user_id=user_id if user_id else 0,
+            document_name=file_name,
+            file_path=local_path,
+            file_size=len(content),
+            status="queued",
+        )
+
     async def list_documents(self, user_id: int = None):
         """列出已上传的文档"""
         from app.models.document import Document

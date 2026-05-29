@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.core.database import get_async_session
-from app.utils.env import resolve_env
+from app.utils.env import resolve_env, load_yaml_config
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,18 +16,54 @@ class ChatService:
 
     def __init__(self):
         settings = get_settings()
+        yaml_config = load_yaml_config()
 
         # LLM
         from app.core import create_llm_service
+        llm_config = {
+            "api_key": settings.llm.api_key,
+            "model": settings.llm.model,
+            "max_tokens": settings.llm.max_tokens,
+            "temperature": settings.llm.temperature,
+            "base_url": settings.llm.base_url,
+        }
+        # 如果是 ollama provider，使用 ollama 配置覆盖
+        if settings.llm.provider == "ollama":
+            llm_config["model"] = settings.ollama.model
+            llm_config["base_url"] = settings.ollama.base_url.rstrip("/") + "/v1"
+        # 如果是 vllm provider，使用 vllm 配置
+        elif settings.llm.provider == "vllm":
+            vllm_cfg = yaml_config.get("llm", {}).get("vllm", {})
+            llm_config["model"] = vllm_cfg.get("model", "Qwen/Qwen3-1.8B-Instruct")
+            llm_config["base_url"] = vllm_cfg.get("base_url", "http://localhost:8010/v1")
         self.llm_service = create_llm_service(
             provider=settings.llm.provider,
-            config={
-                "api_key": settings.llm.api_key,
-                "model": settings.llm.model,
-                "max_tokens": settings.llm.max_tokens,
-                "temperature": settings.llm.temperature,
-                "base_url": settings.llm.base_url,
-            },
+            config=llm_config,
+        )
+
+        # Redis 缓存
+        from app.core.redis_client import create_redis_cache
+        redis_cache = None
+        if settings.redis.host:
+            try:
+                redis_cache = create_redis_cache({
+                    "host": settings.redis.host,
+                    "port": settings.redis.port,
+                    "db": settings.redis.db,
+                    "password": settings.redis.password or None,
+                    "prefix": settings.redis.prefix,
+                })
+            except Exception as e:
+                logger.warning(f"[Redis] Failed to connect: {e}")
+
+        # Embedding 服务
+        from app.core.embedding_service import create_embedding_service
+        embedding_service = create_embedding_service(llm_service=self.llm_service)
+
+        # 对话记忆向量存储
+        from app.core.chroma_client import create_conversation_memory_store
+        conversation_memory_store = create_conversation_memory_store(
+            persist_directory=settings.chroma.persist_directory
         )
 
         # 记忆服务
@@ -43,6 +79,9 @@ class ChatService:
             summary_max_turns=settings.memory.summary_max_turns,
             summary_max_chars=settings.memory.summary_max_chars,
             llm_service=self.llm_service,
+            redis_cache=redis_cache,
+            embedding_service=embedding_service,
+            conversation_memory_store=conversation_memory_store,
         )
         self.memory_service = ConversationMemoryService(memory_strategy)
 
@@ -68,8 +107,15 @@ class ChatService:
         )
 
         # Rerank 服务
-        from app.core.rerank_service import SiliconFlowRerankService
-        if settings.rerank.api_key:
+        from app.core.rerank_service import SiliconFlowRerankService, VLLMRerankService
+        if settings.rerank.provider == "vllm":
+            rerank_cfg = yaml_config.get("rerank", {}).get("vllm", {})
+            self.rerank_service = VLLMRerankService(
+                model=rerank_cfg.get("model", "BAAI/bge-reranker-base"),
+                base_url=rerank_cfg.get("base_url", "http://localhost:8012/v1"),
+                min_score=settings.rerank.min_score,
+            )
+        elif settings.rerank.api_key:
             self.rerank_service = SiliconFlowRerankService(
                 api_key=settings.rerank.api_key,
                 model=settings.rerank.model,
@@ -149,14 +195,11 @@ class ChatService:
         # ReAct Agent - 时间工具 + MCP 工具
         from app.agent.react import ReActAgent, GetCurrentTimeTool
         from app.agent.mcp import get_mcp_provider
-        from app.models.skill import get_skill_manager
         tools = []
 
         # 时间工具
         time_tool = GetCurrentTimeTool()
         tools.append(time_tool)
-        skill_manager = get_skill_manager()
-        skill_manager.register_tool("get_current_time", time_tool)
         logger.info("GetCurrentTime tool registered")
 
         # MCP 工具加载（延迟到第一次使用时）
@@ -173,16 +216,105 @@ class ChatService:
             logger.warning(f"[MCP] Failed to configure MCP: {e}")
             self._mcp_provider = None
 
-        skill_cfgs = [s.model_dump() for s in settings.skills]
-        skill_manager.load_skills_from_config(skill_cfgs)
-        logger.info(f"Loaded {len(skill_manager.list_skills())} skills")
-
         self.react_agent = ReActAgent(self.llm_service, tools, {
             "model_call_limit": settings.agent.model_call_limit,
             "tool_call_limit": settings.agent.tool_call_limit,
             "session_model_call_limit": settings.agent.session_model_call_limit,
             "session_tool_call_limit": settings.agent.session_tool_call_limit,
         })
+
+    # ── 公共逻辑 ───────────────────────────────────────────
+
+    def _build_task_info(self, request) -> dict:
+        """构建 task_info 字典 — chat/chat_stream 共用"""
+        return {
+            "conversation_id": request.conversation_id or f"conv_{id(request)}",
+            "question": request.question,
+            "chat_mode": request.chat_mode.value,
+            "selected_document_id": request.selected_document_id,
+            "selected_document_name": request.selected_document_name,
+            "selected_task_id": request.selected_task_id,
+            "current_date": None,
+            "current_date_text": "",
+            "user_id": request.user_id,
+        }
+
+    async def _discover_mcp_tools(self):
+        """MCP 工具发现并注册到 ReAct Agent — chat/chat_stream 共用"""
+        if not self._mcp_provider:
+            logger.warning("[MCP] No _mcp_provider configured, skipping MCP discovery")
+            return
+
+        try:
+            logger.info("[MCP] Starting discovery...")
+            await self._mcp_provider.discover_all_servers()
+            mcp_tools = self._mcp_provider.list_tools()
+            logger.info(f"[MCP] Discovered {len(mcp_tools)} tools: {[t.name for t in mcp_tools]}")
+            if not mcp_tools:
+                logger.warning("[MCP] No tools discovered from servers")
+                return
+
+            from app.agent.react import AgentTool
+            for mcp_tool in mcp_tools:
+                async def mcp_wrapper(**kwargs):
+                    return await self._mcp_provider.invoke_tool(mcp_tool.name, kwargs)
+                agent_tool = AgentTool(
+                    name=mcp_tool.name,
+                    description=mcp_tool.description,
+                    func=mcp_wrapper,
+                )
+                if mcp_tool.name not in self.react_agent.tools:
+                    self.react_agent.tools[mcp_tool.name] = agent_tool
+                    logger.info(f"[MCP] Added tool: {mcp_tool.name}")
+        except Exception as e:
+            logger.warning(f"[MCP] Tool discovery failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _parse_history(self, memory_context: dict) -> list:
+        """从记忆上下文解析对话历史 — chat/chat_stream 共用"""
+        history_text = memory_context.get("recent_transcript", "") or ""
+        history = []
+        if history_text:
+            for line in history_text.split("\n"):
+                if line.startswith("用户:"):
+                    history.append({"role": "user", "content": line[3:].strip()})
+                elif line.startswith("助手:"):
+                    history.append({"role": "assistant", "content": line[3:].strip()})
+        return history
+
+    async def _execute_react_mode(self, plan, request, memory_context: dict):
+        """执行 ReAct Agent 模式 — chat/chat_stream 共用"""
+        from app.agent import AgentExecutor
+
+        logger.info(f"[MCP] _mcp_provider = {self._mcp_provider}, type = {type(self._mcp_provider)}")
+        await self._discover_mcp_tools()
+
+        executor = AgentExecutor(self.react_agent)
+        logger.info(f"[REACT] Agent tools: {list(self.react_agent.tools.keys())}")
+
+        history = self._parse_history(memory_context)
+        return await executor.execute({
+            "question": plan.original_question,
+            "history": history,
+        })
+
+    async def _execute_react_mode_stream(self, plan, request, memory_context: dict):
+        """执行 ReAct Agent 模式（流式）— chat/chat_stream 共用"""
+        from app.agent import AgentExecutor
+
+        logger.info(f"[MCP] _mcp_provider = {self._mcp_provider}, type = {type(self._mcp_provider)}")
+        await self._discover_mcp_tools()
+
+        executor = AgentExecutor(self.react_agent)
+        logger.info(f"[REACT] Agent tools: {list(self.react_agent.tools.keys())}")
+
+        history = self._parse_history(memory_context)
+        async for token in executor.execute_stream({
+            "question": plan.original_question,
+            "history": history,
+        }):
+            yield token
 
     async def chat(self, request):
         """处理聊天请求"""
@@ -192,19 +324,7 @@ class ChatService:
         logger.info(f"CHAT: question={request.question}, mode={request.chat_mode}")
 
         try:
-            conversation_id = request.conversation_id or f"conv_{id(request)}"
-
-            task_info = {
-                "conversation_id": conversation_id,
-                "question": request.question,
-                "chat_mode": request.chat_mode.value,
-                "selected_document_id": request.selected_document_id,
-                "selected_document_name": request.selected_document_name,
-                "selected_task_id": request.selected_task_id,
-                "current_date": None,
-                "current_date_text": "",
-                "user_id": request.user_id,
-            }
+            task_info = self._build_task_info(request)
 
             plan = await self.orchestrator.prepare(task_info)
             logger.debug(f"Plan mode: {plan.mode}")
@@ -218,56 +338,17 @@ class ChatService:
                 })
 
             elif plan.mode == ExecutionMode.REACT_AGENT:
-                # MCP 工具发现（在 chat 时进行，避免 __init__ 中 await）
-                logger.info(f"[MCP] _mcp_provider = {self._mcp_provider}, type = {type(self._mcp_provider)}")
-                if self._mcp_provider:
-                    try:
-                        logger.info(f"[MCP] Starting discovery...")
-                        await self._mcp_provider.discover_all_servers()
-                        mcp_tools = self._mcp_provider.list_tools()
-                        logger.info(f"[MCP] Discovered {len(mcp_tools)} tools: {[t.name for t in mcp_tools]}")
-                        if mcp_tools:
-                            from app.agent.react import AgentTool
-                            for mcp_tool in mcp_tools:
-                                async def mcp_wrapper(**kwargs):
-                                    return await self._mcp_provider.invoke_tool(mcp_tool.name, kwargs)
-                                agent_tool = AgentTool(name=mcp_tool.name, description=mcp_tool.description, func=mcp_wrapper)
-                                if mcp_tool.name not in self.react_agent.tools:
-                                    self.react_agent.tools[mcp_tool.name] = agent_tool
-                                    logger.info(f"[MCP] Added tool: {mcp_tool.name}")
-                        else:
-                            logger.warning("[MCP] No tools discovered from servers")
-                    except Exception as e:
-                        logger.warning(f"[MCP] Tool discovery failed: {e}")
-                        import traceback
-                        traceback.print_exc()
-                else:
-                    logger.warning("[MCP] No _mcp_provider configured, skipping MCP discovery")
-
-                executor = AgentExecutor(self.react_agent)
-                logger.info(f"[REACT] Agent tools: {list(self.react_agent.tools.keys())}")
                 memory_context = await self.memory_service.load_memory_context(
-                    conversation_id, request.user_id
+                    task_info["conversation_id"], task_info["user_id"]
                 )
-                history_text = memory_context.get("recent_transcript", "") or ""
-                history = []
-                if history_text:
-                    for line in history_text.split("\n"):
-                        if line.startswith("用户:"):
-                            history.append({"role": "user", "content": line[3:].strip()})
-                        elif line.startswith("助手:"):
-                            history.append({"role": "assistant", "content": line[3:].strip()})
-                result = await executor.execute({
-                    "question": plan.original_question,
-                    "history": history,
-                })
+                result = await self._execute_react_mode(plan, request, memory_context)
 
             else:
                 result = await self._handle_rag_mode(plan, request.user_id)
 
             # 保存对话记忆
             content = result.content if hasattr(result, 'content') else str(result)
-            await self._save_conversation(conversation_id, request.user_id, request.question, content)
+            await self._save_conversation(task_info["conversation_id"], task_info["user_id"], task_info["question"], content)
 
             # 构建来源
             sources = self._build_sources(result)
@@ -276,7 +357,7 @@ class ChatService:
                 answer=str(content) if content else "无内容",
                 sources=sources,
                 suggested_questions=getattr(result, 'suggested_questions', []) or [],
-                conversation_id=conversation_id,
+                conversation_id=task_info["conversation_id"],
             )
 
         except Exception as e:
@@ -297,21 +378,9 @@ class ChatService:
 
         logger.info(f"CHAT STREAM: question={request.question}, mode={request.chat_mode}")
 
-        conversation_id = request.conversation_id or f"conv_{id(request)}"
-        full_answer = ""
-
         try:
-            task_info = {
-                "conversation_id": conversation_id,
-                "question": request.question,
-                "chat_mode": request.chat_mode.value,
-                "selected_document_id": request.selected_document_id,
-                "selected_document_name": request.selected_document_name,
-                "selected_task_id": request.selected_task_id,
-                "current_date": None,
-                "current_date_text": "",
-                "user_id": request.user_id,
-            }
+            task_info = self._build_task_info(request)
+            full_answer = ""
 
             plan = await self.orchestrator.prepare(task_info)
             logger.debug(f"Plan mode: {plan.mode}")
@@ -328,50 +397,10 @@ class ChatService:
                 yield answer
 
             elif plan.mode == ExecutionMode.REACT_AGENT:
-                # MCP 工具发现（在 chat 时进行，避免 __init__ 中 await）
-                logger.info(f"[MCP] _mcp_provider = {self._mcp_provider}, type = {type(self._mcp_provider)}")
-                if self._mcp_provider:
-                    try:
-                        logger.info(f"[MCP] Starting discovery...")
-                        await self._mcp_provider.discover_all_servers()
-                        mcp_tools = self._mcp_provider.list_tools()
-                        logger.info(f"[MCP] Discovered {len(mcp_tools)} tools: {[t.name for t in mcp_tools]}")
-                        if mcp_tools:
-                            from app.agent.react import AgentTool
-                            for mcp_tool in mcp_tools:
-                                async def mcp_wrapper(**kwargs):
-                                    return await self._mcp_provider.invoke_tool(mcp_tool.name, kwargs)
-                                agent_tool = AgentTool(name=mcp_tool.name, description=mcp_tool.description, func=mcp_wrapper)
-                                if mcp_tool.name not in self.react_agent.tools:
-                                    self.react_agent.tools[mcp_tool.name] = agent_tool
-                                    logger.info(f"[MCP] Added tool: {mcp_tool.name}")
-                        else:
-                            logger.warning("[MCP] No tools discovered from servers")
-                    except Exception as e:
-                        logger.warning(f"[MCP] Tool discovery failed: {e}")
-                        import traceback
-                        traceback.print_exc()
-                else:
-                    logger.warning("[MCP] No _mcp_provider configured, skipping MCP discovery")
-
-                executor = AgentExecutor(self.react_agent)
-                logger.info(f"[REACT] Agent tools: {list(self.react_agent.tools.keys())}")
                 memory_context = await self.memory_service.load_memory_context(
-                    conversation_id, request.user_id
+                    task_info["conversation_id"], task_info["user_id"]
                 )
-                history_text = memory_context.get("recent_transcript", "") or ""
-                history = []
-                if history_text:
-                    for line in history_text.split("\n"):
-                        if line.startswith("用户:"):
-                            history.append({"role": "user", "content": line[3:].strip()})
-                        elif line.startswith("助手:"):
-                            history.append({"role": "assistant", "content": line[3:].strip()})
-
-                async for token in executor.execute_stream({
-                    "question": plan.original_question,
-                    "history": history,
-                }):
+                async for token in self._execute_react_mode_stream(plan, request, memory_context):
                     if token:
                         full_answer += token
                         yield token
@@ -385,7 +414,7 @@ class ChatService:
 
             # 保存对话记忆
             if full_answer:
-                await self._save_conversation(conversation_id, request.user_id, request.question, full_answer)
+                await self._save_conversation(task_info["conversation_id"], task_info["user_id"], task_info["question"], full_answer)
 
         except Exception as e:
             import traceback

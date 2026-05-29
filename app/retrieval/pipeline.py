@@ -68,12 +68,17 @@ class VectorRetrievalChannel:
         """执行向量检索"""
         # 检查 embedding 是否可用
         if hasattr(self.embedding_service, 'embedding_available') and not self.embedding_service.embedding_available:
+            logger.warning(f"[VECTOR] embedding_available=False，向量检索已禁用")
             return []
 
         # 获取查询向量
+        logger.info(f"[VECTOR] 开始生成查询向量: query={query[:50]}")
         query_vector = await self.embedding_service.embed(query)
         if not query_vector:
+            logger.warning(f"[VECTOR] 查询向量生成失败")
             return []
+
+        logger.info(f"[VECTOR] 查询向量生成成功: dim={len(query_vector)}")
 
         # 构建过滤条件
         # 注意: Chroma 中存储的 document_id 是 UUID 字符串 (如 "b43125bc-9555-43ac-a92c-c56ddb1370e9")
@@ -144,6 +149,7 @@ class VectorRetrievalChannel:
                     metadata=metadata
                 ))
 
+        logger.info(f"[VECTOR] Chroma 检索完成: 共 {len(documents[0]) if documents and documents[0] else 0} 条, 通过阈值 {self.config.get('min_vector_similarity', 0.08)} 筛选后剩 {len(retrieval_results)} 条")
         return retrieval_results
 
 

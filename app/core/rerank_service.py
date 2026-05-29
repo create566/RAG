@@ -103,6 +103,68 @@ class SiliconFlowRerankService:
             return results[:top_k]
 
 
+class VLLMRerankService:
+    """VLLM 本地 Rerank 服务"""
+
+    def __init__(self, model: str = "BAAI/bge-reranker-base", base_url: str = "http://localhost:8012/v1", min_score: float = 0.3):
+        self.model = model
+        self.base_url = base_url
+        self.min_score = min_score
+
+    async def rerank(self, query: str, results: List[Dict], top_k: int = 5) -> List[Dict]:
+        if not results:
+            return []
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key="vllm", base_url=self.base_url)
+
+            documents = []
+            for r in results:
+                if hasattr(r, 'content'):
+                    documents.append(r.content)
+                else:
+                    documents.append(r.get("content", ""))
+
+            def _call():
+                return client.moderations.create(
+                    input=documents
+                )
+
+            # VLLM rerank 需要使用 /rerank 端点
+            response = client.post(
+                url=f"{self.base_url}/rerank",
+                json={
+                    "model": self.model,
+                    "query": query,
+                    "documents": documents,
+                    "top_n": top_k
+                }
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                rerank_results = data.get("results", [])
+
+                reranked = []
+                for item in rerank_results:
+                    idx = item.get("index", 0)
+                    relevance_score = item.get("relevance_score", 0)
+                    if relevance_score < self.min_score:
+                        continue
+                    if idx < len(results):
+                        r = results[idx]
+                        if hasattr(r, 'content'):
+                            from dataclasses import asdict
+                            r = asdict(r)
+                        r["rerank_score"] = relevance_score
+                        reranked.append(r)
+                return reranked
+        except Exception as e:
+            logger.warning(f"[VLLM RERANK] 错误: {e}")
+        return results[:top_k]
+
+
 class MockRerankService:
     """模拟 Rerank 服务（用于测试）"""
 

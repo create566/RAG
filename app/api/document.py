@@ -1,6 +1,8 @@
 """
-文档管理 API 接口 — 瘦控制器
+文档管理 API 接口 — 瘦控制器（异步队列模式）
 """
+import uuid
+import os
 from typing import Optional
 from pathlib import Path
 
@@ -23,7 +25,7 @@ async def upload_document(
     chunk_strategy: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user),
 ):
-    """上传文档（同步处理），可选指定切块策略"""
+    """上传文档（异步处理）：写入本地文件后发送 Redis Stream 消息，立即返回"""
     user_id = current_user.get("user_id")
     logger.info(f"UPLOAD: file={file.filename}, user_id={user_id}, chunk_strategy={chunk_strategy}")
 
@@ -33,14 +35,14 @@ async def upload_document(
 
     try:
         service = get_document_service()
-        doc = await service.process_upload(file, document_name, user_id, chunk_strategy)
+        doc = await service.queue_upload(file, document_name, user_id, chunk_strategy)
         return {
             "success": True,
             "document": {
                 "id": doc.id,
                 "document_name": doc.document_name,
                 "file_size": doc.file_size,
-                "status": doc.status,
+                "status": "queued",  # 状态改为 queued 表示已入队列待处理
                 "chunk_strategy": chunk_strategy or "structural,recursive",
             },
         }

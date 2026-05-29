@@ -80,7 +80,7 @@ function Layout() {
                 </defs>
               </svg>
             </div>
-            {sidebarOpen && <span className="logo-text">Super Agent</span>}
+            {sidebarOpen && <span className="logo-text">RAG智能检索</span>}
           </div>
           <button className="toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}

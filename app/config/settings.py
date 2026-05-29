@@ -62,6 +62,14 @@ class KafkaConfig(BaseModel):
     topic: str = "super-agent-doc-processing"
 
 
+class RedisConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 6379
+    db: int = 0
+    password: str = ""
+    prefix: str = "super_agent:"
+
+
 class LLMConfig(BaseModel):
     provider: str = "dashscope"
     api_key: str = ""
@@ -71,11 +79,17 @@ class LLMConfig(BaseModel):
     base_url: str = "https://dashscope.aliyuncs.com/api/v1"
 
 
+class OllamaConfig(BaseModel):
+    model: str = "qwen2.5"
+    base_url: str = "http://localhost:11434"
+
+
 class EmbeddingConfig(BaseModel):
     provider: str = "dashscope"
     model: str = "text-embedding-v1"
     dimension: int = 1536
     api_key: str = ""
+    base_url: str = ""
 
 
 class SearchConfig(BaseModel):
@@ -122,23 +136,25 @@ class DocumentConfig(BaseModel):
     default_strategy: str = "structural,recursive"
 
 
-class SkillConfig(BaseModel):
-    name: str = ""
-    description: str = ""
-    enabled: bool = True
-    prompt_template: str = ""
-    tools: List[str] = Field(default_factory=list)
-
-
 class MCPConfig(BaseModel):
     servers: List[Dict] = Field(default_factory=list)
+
+
+class IntentConfig(BaseModel):
+    """意图判断关键词配置"""
+    capability_hints: List[str] = ["你都能干什么", "你能做什么", "你可以做什么", "你会什么", "你是谁", "怎么用你", "能帮我什么"]
+    chitchat_hints: List[str] = ["你好", "您好", "hello", "hi", "谢谢", "感谢", "再见", "拜拜", "在吗", "干嘛", "嗨"]
+    tool_needed_hints: List[str] = ["搜索", "查询", "最新", "现在", "今日", "天气", "新闻", "股价", "汇率", "实时", "今天几", "现在几", "几点", "几号", "星期几", "时间", "日期"]
+    open_chat_hints: List[str] = ["天气", "温度", "下雨", "新闻", "股价", "汇率", "热搜", "今天", "明天", "最新", "现在"]
+    simple_chitchat: List[str] = ["1", "。", "", "啊", "嗯", "哦", "呃"]
+    greeting_hints: List[str] = ["你好", "您好", "hi", "hello", "嗨", "嘿"]
 
 
 class RerankConfig(BaseModel):
     provider: str = "siliconflow"
     api_key: str = ""
     model: str = "BAAI/bge-reranker-v2-m3"
-    min_score: float = 0.3  # 最低相关分阈值，低于此分的结果会被过滤
+    min_score: float = 0.05  # 最低相关分阈值，低于此分的结果会被过滤
 
 
 # ── 顶层 Settings ───────────────────────────────────────
@@ -164,7 +180,9 @@ class Settings(BaseSettings):
     neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
     minio: MinioConfig = Field(default_factory=MinioConfig)
     kafka: KafkaConfig = Field(default_factory=KafkaConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
@@ -172,8 +190,8 @@ class Settings(BaseSettings):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     document: DocumentConfig = Field(default_factory=DocumentConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
-    skills: List[SkillConfig] = Field(default_factory=list)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    intent: IntentConfig = Field(default_factory=IntentConfig)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
@@ -212,13 +230,22 @@ class Settings(BaseSettings):
             temperature=llm_cfg.get("temperature", 0.7),
         )
 
+        # 解析 Ollama
+        ollama_cfg = yaml_config.get("llm", {}).get("ollama", {})
+        ollama = OllamaConfig(
+            model=ollama_cfg.get("model", "qwen2.5"),
+            base_url=ollama_cfg.get("base_url", "http://localhost:11434"),
+        )
+
         # 解析 Embedding
-        emb_cfg = yaml_config.get("embedding", {}).get("dashscope", {})
+        emb_provider = yaml_config.get("embedding", {}).get("provider", "dashscope")
+        emb_cfg = yaml_config.get("embedding", {}).get(emb_provider, {})
         embedding = EmbeddingConfig(
-            provider=yaml_config.get("embedding", {}).get("provider", "dashscope"),
+            provider=emb_provider,
             model=emb_cfg.get("model", "text-embedding-v1"),
             dimension=emb_cfg.get("dimension", 1536),
             api_key=resolve_env(emb_cfg.get("api_key", "")),
+            base_url=emb_cfg.get("base_url", ""),
         )
 
         # 解析 Neo4j
@@ -253,6 +280,17 @@ class Settings(BaseSettings):
         kafka = KafkaConfig(
             bootstrap_servers=resolve_env(kafka_cfg.get("bootstrap_servers", "localhost:9092")),
             topic=kafka_cfg.get("topic", "super-agent-doc-processing"),
+        )
+
+        # 解析 Redis
+        redis_cfg = yaml_config.get("redis", {})
+        redis_pwd = redis_cfg.get("password", "")
+        redis = RedisConfig(
+            host=resolve_env(redis_cfg.get("host", "localhost")),
+            port=redis_cfg.get("port", 6379),
+            db=redis_cfg.get("db", 0),
+            password=redis_pwd if redis_pwd else None,
+            prefix=redis_cfg.get("prefix", "super_agent:"),
         )
 
         # 解析 Rerank
@@ -290,10 +328,6 @@ class Settings(BaseSettings):
         search_cfg = yaml_config.get("search", {}).get("duckduckgo", {})
         search = SearchConfig(max_results=search_cfg.get("max_results", 5))
 
-        # 解析 Skills
-        skills_list = yaml_config.get("skills", [])
-        skills = [SkillConfig(**s) for s in skills_list] if skills_list else []
-
         # 解析 MCP
         mcp_list = yaml_config.get("mcp", {}).get("servers", [])
         mcp = MCPConfig(servers=mcp_list)
@@ -308,7 +342,9 @@ class Settings(BaseSettings):
             neo4j=neo4j,
             minio=minio,
             kafka=kafka,
+            redis=redis,
             llm=llm,
+            ollama=ollama,
             embedding=embedding,
             search=search,
             agent=agent,
@@ -316,8 +352,8 @@ class Settings(BaseSettings):
             retrieval=retrieval,
             document=document,
             rerank=rerank,
-            skills=skills,
             mcp=mcp,
+            intent=IntentConfig(),
         )
 
 

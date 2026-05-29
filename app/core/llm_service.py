@@ -71,7 +71,13 @@ class DashScopeLLMService(BaseLLMService):
         except asyncio.TimeoutError:
             return "API调用超时（190秒）"
         except Exception as e:
-            return f"调用失败: {str(e)}"
+            error_str = str(e)
+            if "Connection aborted" in error_str or "RemoteDisconnected" in error_str or "ProxyError" in error_str:
+                return "网络连接失败，请检查网络或代理设置"
+            elif "timeout" in error_str.lower():
+                return "请求超时，请稍后重试"
+            else:
+                return f"调用失败: {error_str}"
 
     async def chat_stream(self, prompt: str, system_prompt: str = None, **kwargs) -> AsyncIterator[str]:
         """流式调用DashScope API - 逐token yield"""
@@ -114,7 +120,12 @@ class DashScopeLLMService(BaseLLMService):
                         return
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
             except Exception as e:
-                loop.call_soon_threadsafe(queue.put_nowait, ("error", f"调用失败: {str(e)}"))
+                error_str = str(e)
+                if "Connection aborted" in error_str or "RemoteDisconnected" in error_str or "ProxyError" in error_str:
+                    error_str = "网络连接失败，请检查网络或代理设置"
+                elif "timeout" in error_str.lower():
+                    error_str = "请求超时，请稍后重试"
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error_str))
 
         loop.run_in_executor(None, _stream)
 
@@ -211,7 +222,13 @@ class OpenAILLMService(BaseLLMService):
                 return response.choices[0].message.content
             return ""
         except Exception as e:
-            return f"调用失败: {str(e)}"
+            error_str = str(e)
+            if "Connection aborted" in error_str or "RemoteDisconnected" in error_str or "ProxyError" in error_str:
+                return "网络连接失败，请检查网络或代理设置"
+            elif "timeout" in error_str.lower():
+                return "请求超时，请稍后重试"
+            else:
+                return f"调用失败: {error_str}"
 
     async def embed(self, text: str) -> List[float]:
         """获取文本嵌入"""
@@ -262,10 +279,187 @@ class AnthropicLLMService(BaseLLMService):
 
             return response.content[0].text
         except Exception as e:
-            return f"调用失败: {str(e)}"
+            error_str = str(e)
+            if "Connection aborted" in error_str or "RemoteDisconnected" in error_str or "ProxyError" in error_str:
+                return "网络连接失败，请检查网络或代理设置"
+            elif "timeout" in error_str.lower():
+                return "请求超时，请稍后重试"
+            else:
+                return f"调用失败: {error_str}"
 
     async def embed(self, text: str) -> List[float]:
         # Anthropic不提供embedding服务，使用其他服务
+        return []
+
+
+class VLLMService(BaseLLMService):
+    """VLLM 本地模型服务"""
+
+    def __init__(self, model: str = "Qwen/Qwen3-1.8B-Instruct", base_url: str = "http://localhost:8010/v1", config: Dict = None):
+        self.model = model
+        self.base_url = base_url
+        self.config = config or {}
+
+    async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        from openai import OpenAI
+        client = OpenAI(api_key="vllm", base_url=self.base_url)
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        def _call():
+            return client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", 2048),
+                temperature=kwargs.get("temperature", 0.3),
+            )
+
+        response = await asyncio.to_thread(_call)
+        if response.choices:
+            return response.choices[0].message.content
+        return ""
+
+    async def chat_stream(self, prompt: str, system_prompt: str = None, **kwargs) -> AsyncIterator[str]:
+        from openai import OpenAI
+        client = OpenAI(api_key="vllm", base_url=self.base_url)
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        def _stream():
+            try:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                    max_tokens=kwargs.get("max_tokens", 2048),
+                    temperature=kwargs.get("temperature", 0.3),
+                )
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        text = chunk.choices[0].delta.content
+                        loop.call_soon_threadsafe(queue.put_nowait, ("token", text))
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+            except Exception as e:
+                error_str = str(e)
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error_str))
+
+        loop.run_in_executor(None, _stream)
+
+        while True:
+            event_type, data = await queue.get()
+            if event_type == "done":
+                break
+            elif event_type == "error":
+                yield data
+                break
+            else:
+                yield data
+
+    async def embed(self, text: str) -> List[float]:
+        """获取文本嵌入 - VLLM embedding 服务"""
+        try:
+            from openai import OpenAI
+            # embedding 使用单独的端口 8011
+            embed_base_url = self.base_url.replace("8010", "8011")
+            client = OpenAI(api_key="vllm", base_url=embed_base_url)
+
+            def _call():
+                return client.embeddings.create(
+                    model="Alibaba-NLP/gte-multilingual-base",
+                    input=text
+                )
+
+            response = await asyncio.to_thread(_call)
+            if response.data:
+                return response.data[0].embedding
+            return []
+        except Exception as e:
+            logger.warning(f"[VLLM] Embedding failed: {e}")
+            return []
+
+
+class OllamaLLMService(BaseLLMService):
+    """Ollama 本地模型服务"""
+
+    def __init__(self, model: str = "qwen2.5", base_url: str = "http://localhost:11434", config: Dict = None):
+        self.model = model
+        self.base_url = base_url
+        self.config = config or {}
+
+    async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        from openai import OpenAI
+        client = OpenAI(api_key="ollama", base_url=self.base_url)
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        def _call():
+            return client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", 4096),
+                temperature=kwargs.get("temperature", 0.7),
+            )
+
+        response = await asyncio.to_thread(_call)
+        if response.choices:
+            return response.choices[0].message.content
+        return ""
+
+    async def chat_stream(self, prompt: str, system_prompt: str = None, **kwargs) -> AsyncIterator[str]:
+        from openai import OpenAI
+        client = OpenAI(api_key="ollama", base_url=self.base_url)
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        def _stream():
+            try:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                    max_tokens=kwargs.get("max_tokens", 4096),
+                    temperature=kwargs.get("temperature", 0.7),
+                )
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        text = chunk.choices[0].delta.content
+                        loop.call_soon_threadsafe(queue.put_nowait, ("token", text))
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+            except Exception as e:
+                error_str = str(e)
+                if "Connection aborted" in error_str or "RemoteDisconnected" in error_str or "ProxyError" in error_str:
+                    error_str = "网络连接失败，请检查网络或代理设置"
+                elif "timeout" in error_str.lower():
+                    error_str = "请求超时，请稍后重试"
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error_str))
+
+        loop.run_in_executor(None, _stream)
+
+        while True:
+            event_type, data = await queue.get()
+            if event_type == "done":
+                break
+            elif event_type == "error":
+                yield data
+                break
+            else:
+                yield data
+
+    async def embed(self, text: str) -> List[float]:
         return []
 
 
@@ -291,6 +485,16 @@ def create_llm_service(provider: str = "dashscope", config: Dict = None) -> Base
             api_key=config.get("api_key", ""),
             model=config.get("model", "claude-3-opus-20240229"),
             config=config
+        )
+    elif provider == "ollama":
+        return OllamaLLMService(
+            model=config.get("model", "qwen2.5"),
+            base_url=config.get("base_url", "http://localhost:11434"),
+        )
+    elif provider == "vllm":
+        return VLLMService(
+            model=config.get("model", "Qwen/Qwen3-1.8B-Instruct"),
+            base_url=config.get("base_url", "http://localhost:8010/v1"),
         )
     else:
         raise ValueError(f"不支持的LLM provider: {provider}")

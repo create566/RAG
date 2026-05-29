@@ -1,7 +1,6 @@
 """
 RAG前置编排引擎
 包含：路由判定、问题改写、子问题拆分、意图解析、歧义检测
-对应Java的ChatPreparationOrchestrator
 """
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
@@ -97,10 +96,6 @@ class TimeSensitiveQueryHelper:
 class ChatPreparationOrchestrator:
     """RAG前置编排器 - 对标Java的ChatPreparationOrchestrator"""
 
-    CAPABILITY_HINTS = {"你都能干什么", "你能做什么", "你可以做什么", "你会什么", "你是谁", "怎么用你", "能帮我什么"}
-    OPEN_CHAT_HINTS = {"天气", "温度", "下雨", "新闻", "股价", "汇率", "热搜", "今天", "明天", "最新", "现在"}
-    CHITCHAT_HINTS = {"你好", "您好", "hello", "hi", "谢谢", "感谢", "再见", "拜拜"}
-
     def __init__(self, llm_service, memory_service, document_router, knowledge_route_service, document_service, config: Dict[str, Any]):
         self.llm_service = llm_service
         self.memory_service = memory_service
@@ -109,6 +104,16 @@ class ChatPreparationOrchestrator:
         self.document_service = document_service
         self.config = config
         self.no_evidence_reply = config.get("no_evidence_reply", "当前没有足够证据支持明确回答。")
+
+        # 从配置加载意图判断关键词
+        from app.config import get_settings
+        intent_cfg = get_settings().intent
+        self.CAPABILITY_HINTS = set(intent_cfg.capability_hints)
+        self.OPEN_CHAT_HINTS = set(intent_cfg.open_chat_hints)
+        self.CHITCHAT_HINTS = set(intent_cfg.chitchat_hints)
+        self._tool_needed_hints = set(intent_cfg.tool_needed_hints)
+        self._simple_chitchat = set(intent_cfg.simple_chitchat)
+        self._greeting_hints = set(g.lower() for g in intent_cfg.greeting_hints)
 
     async def prepare(self, task_info: Dict[str, Any]) -> ConversationExecutionPlan:
         """执行完整的编排流程 - 对标Java的prepare方法"""
@@ -485,37 +490,33 @@ class ChatPreparationOrchestrator:
         """AI自动判断意图 - 决定走RAG还是ReAct Agent"""
         logger.debug(f"[INTENT] Analyzing: {question}")
 
-        capability_hints = ["你都能干什么", "你能做什么", "你可以做什么", "你会什么", "你是谁", "怎么用你", "能帮我什么"]
-        chitchat_hints = ["你好", "您好", "hello", "hi", "谢谢", "感谢", "再见", "拜拜", "在吗", "干嘛", "你好", "嗨"]
-        tool_needed_hints = ["搜索", "查询", "最新", "现在", "今日", "天气", "新闻", "股价", "汇率", "实时", "今天几", "现在几", "几点", "几号", "星期几", "时间", "日期"]
-
         # 清理问题中的标点符号
         clean = question.strip().rstrip('?').rstrip('？').rstrip('!').rstrip('！').rstrip('.').rstrip('。').strip()
         clean_lower = clean.lower()
 
         # 0. 明确的中文寒暄（精确匹配，去除标点后）
-        if clean_lower in ["你好", "您好", "hi", "hello", "嗨", "嘿"]:
+        if clean_lower in self._greeting_hints:
             logger.debug("[INTENT] -> CHITCHAT (greeting)")
             return "CHITCHAT"
 
         # 1. 检查闲聊关键词
-        for hint in chitchat_hints:
+        for hint in self.CHITCHAT_HINTS:
             if hint in clean:
                 logger.debug(f"[INTENT] -> CHITCHAT (hint: {hint})")
                 return "CHITCHAT"
 
         # 2. 检查闲聊（简单符号/单字）
-        if clean in ["1", "。", "", "啊", "嗯", "哦", "呃"]:
+        if clean in self._simple_chitchat:
             logger.debug("[INTENT] -> CHITCHAT (simple)")
             return "CHITCHAT"
 
         # 3. 检查是否需要工具/实时信息
-        if requires_fresh_search or any(hint in clean for hint in tool_needed_hints):
+        if requires_fresh_search or any(hint in clean for hint in self._tool_needed_hints):
             logger.debug(f"[INTENT] -> REACT_AGENT (needs tools or fresh search)")
             return "REACT_AGENT"
 
         # 4. 检查是否询问能力
-        if any(hint in clean for hint in capability_hints):
+        if any(hint in clean for hint in self.CAPABILITY_HINTS):
             logger.debug("[INTENT] -> CHITCHAT (capability)")
             return "CHITCHAT"
 
