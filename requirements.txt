@@ -19,7 +19,6 @@ langchain-openai==0.1.14
 langchain-anthropic==0.1.21
 langchain-community==0.0.38
 langgraph==0.0.62
-# langsmith-sdk - removed due to python 3.10 incompatibility
 openai==1.14.0
 duckduckgo-search>=7.0.0
 anthropic==0.25.0
@@ -35,3 +34,7 @@ pytest==8.1.1
 pytest-asyncio==0.23.6
 jieba==0.42.1
 redis==5.0.0
+cryptography==42.0.8
+ragas==0.3.0
+datasets
+jsonplus
