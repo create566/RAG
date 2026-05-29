@@ -70,14 +70,17 @@ function Layout() {
           <div className="logo">
             <div className="logo-icon">
               <svg viewBox="0 0 40 40" fill="none">
-                <circle cx="20" cy="20" r="18" stroke="url(#logoGradient)" strokeWidth="2"/>
-                <path d="M12 20h16M20 12v16" stroke="url(#logoGradient)" strokeWidth="2" strokeLinecap="round"/>
                 <defs>
-                  <linearGradient id="logoGradient" x1="0" y1="0" x2="40" y2="40">
-                    <stop offset="0%" stopColor="#0ea5e9"/>
-                    <stop offset="100%" stopColor="#10b981"/>
+                  <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#FF6B6B"/>
+                    <stop offset="33%" stopColor="#4ECDC4"/>
+                    <stop offset="66%" stopColor="#A855F7"/>
+                    <stop offset="100%" stopColor="#3B82F6"/>
                   </linearGradient>
                 </defs>
+                <circle cx="20" cy="20" r="18" fill="url(#logoGradient)" fillOpacity="0.15" stroke="url(#logoGradient)" strokeWidth="1.5"/>
+                <path d="M20 8 L20 32 M12 14 L28 14 M12 26 L28 26 M14 20 L26 20" stroke="url(#logoGradient)" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="20" cy="20" r="4" fill="url(#logoGradient)"/>
               </svg>
             </div>
             {sidebarOpen && <span className="logo-text">RAG智能检索</span>}
