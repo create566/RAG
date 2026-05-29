@@ -91,7 +91,7 @@ class ChatService:
             "persist_directory": settings.chroma.persist_directory,
             "collection_name": settings.chroma.collection_name,
         }
-        self.vector_store = create_vector_store(vector_cfg)
+        self.vector_store = create_vector_store(config=vector_cfg)
 
         # 关键词检索通道 (Elasticsearch)
         from elasticsearch import Elasticsearch

@@ -20,7 +20,6 @@ class DocumentService:
         settings = get_settings()
 
         from app.documents.processor import DocumentProcessor, TextSplitter
-        from app.core.chroma_client import create_vector_store
         from app.core.llm_service import create_llm_service
 
         self.processor = DocumentProcessor()
@@ -41,11 +40,10 @@ class DocumentService:
             llm_service=self.llm_service,
         )
 
-        vector_cfg = {
+        self.vector_cfg = {
             "persist_directory": settings.chroma.persist_directory,
             "collection_name": settings.chroma.collection_name,
         }
-        self.vector_store = create_vector_store(vector_cfg)
 
         # ES 客户端
         es_hosts = [resolve_env(h) if isinstance(h, str) else h for h in settings.elasticsearch.hosts]
@@ -69,11 +67,17 @@ class DocumentService:
             except Exception as e:
                 logger.warning(f"Neo4j init failed: {e}")
 
+    def _get_vector_store(self, user_id: int = None):
+        """获取用户隔离的向量存储"""
+        from app.core.chroma_client import create_vector_store
+        return create_vector_store(user_id=user_id, config=self.vector_cfg)
+
     async def process_upload(self, file, document_name: str = None, user_id: int = None, chunk_strategy: str = None):
         """处理文档上传（同步处理）"""
         from app.models.document import Document
 
         settings = get_settings()
+        vector_store = self._get_vector_store(user_id)
 
         if chunk_strategy:
             from app.documents.processor import TextSplitter
@@ -146,7 +150,7 @@ class DocumentService:
                 })
 
             if chunk_ids:
-                self.vector_store.add(
+                vector_store.add(
                     documents=valid_chunks,
                     embeddings=embeddings,
                     metadatas=metadatas,
@@ -225,7 +229,8 @@ class DocumentService:
         from app.models.document import Document
 
         try:
-            result = self.vector_store.peek(limit=1000)
+            vector_store = self._get_vector_store(user_id)
+            result = vector_store.peek(limit=1000)
             docs = {}
             metadatas = result.get("metadatas", []) if result else []
             for metadata in metadatas:
@@ -248,10 +253,10 @@ class DocumentService:
             logger.error(f"List documents error: {e}")
             return []
 
-    async def delete_document(self, document_id: str) -> bool:
+    async def delete_document(self, document_id: str, user_id: int = None) -> bool:
         """删除文档 — 级联删除向量、ES、Neo4j 和本地文件"""
         try:
-            target_uuid = None
+            vector_store = self._get_vector_store(user_id)
             is_uuid = len(document_id) == 36 and "-" in document_id
 
             if is_uuid:
@@ -280,8 +285,8 @@ class DocumentService:
 
             logger.info(f"DELETE resolved: {document_id} -> UUID={target_uuid}")
 
-            # Chroma
-            self.vector_store.delete(where={"document_id": target_uuid})
+            # Chroma (用户隔离)
+            vector_store.delete(where={"document_id": target_uuid})
 
             # Elasticsearch
             if self.es_client:

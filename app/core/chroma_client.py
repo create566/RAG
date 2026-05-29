@@ -10,9 +10,16 @@ from chromadb.config import Settings
 class ChromaVectorStore:
     """Chroma 向量存储客户端"""
 
-    def __init__(self, persist_directory: str = "./data/chroma", collection_name: str = "super_agent_docs"):
+    def __init__(self, user_id: int = None, persist_directory: str = "./data/chroma", collection_name: str = None):
+        self.user_id = user_id
         self.persist_directory = persist_directory
-        self.collection_name = collection_name
+        # 用户隔离：每个用户独立的 collection
+        if collection_name:
+            self.collection_name = collection_name
+        elif user_id:
+            self.collection_name = f"user_{user_id}_docs"
+        else:
+            self.collection_name = "super_agent_docs"
         self._client = None
         self._collection = None
 
@@ -81,12 +88,13 @@ class ChromaVectorStore:
         return self.collection.count()
 
 
-def create_vector_store(config: Dict = None) -> ChromaVectorStore:
-    """工厂方法创建向量存储"""
+def create_vector_store(user_id: int = None, config: Dict = None) -> ChromaVectorStore:
+    """Factory method to create vector store (user isolated)"""
     config = config or {}
     return ChromaVectorStore(
+        user_id=user_id,
         persist_directory=config.get("persist_directory", "./data/chroma"),
-        collection_name=config.get("collection_name", "super_agent_docs")
+        collection_name=config.get("collection_name")
     )
 
 

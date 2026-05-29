@@ -13,6 +13,7 @@ from app.services.chat_service import get_chat_service
 from app.config import get_settings
 from app.core.database import get_async_session
 from app.core.logging import get_logger
+from app.core.context import set_user_context, clear_user_context
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -21,29 +22,37 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """聊天接口"""
-    service = get_chat_service()
-    return await service.chat(request)
+    set_user_context(request.user_id)
+    try:
+        service = get_chat_service()
+        return await service.chat(request)
+    finally:
+        clear_user_context()
 
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """流式聊天接口 — 逐 token SSE 推送"""
-    service = get_chat_service()
-    conv_id = request.conversation_id or f"conv_{hash(request.question)}_{id(request)}"
-    request.conversation_id = conv_id
+    set_user_context(request.user_id)
+    try:
+        service = get_chat_service()
+        conv_id = request.conversation_id or f"conv_{hash(request.question)}_{id(request)}"
+        request.conversation_id = conv_id
 
-    async def generate():
-        try:
-            async for token in service.chat_stream(request):
-                yield f"data: {json.dumps({'answer': token, 'done': False}, ensure_ascii=False)}\n\n"
-            yield f"data: {json.dumps({'answer': '', 'done': True, 'conversation_id': conv_id}, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            import traceback
-            error_msg = f"错误: {e}"
-            traceback.print_exc()
-            yield f"data: {json.dumps({'answer': error_msg, 'done': True}, ensure_ascii=False)}\n\n"
+        async def generate():
+            try:
+                async for token in service.chat_stream(request):
+                    yield f"data: {json.dumps({'answer': token, 'done': False}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'answer': '', 'done': True, 'conversation_id': conv_id}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                import traceback
+                error_msg = f"错误: {e}"
+                traceback.print_exc()
+                yield f"data: {json.dumps({'answer': error_msg, 'done': True}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+        return StreamingResponse(generate(), media_type="text/event-stream")
+    finally:
+        clear_user_context()
 
 
 @router.get("/conversation/{conversation_id}/history")

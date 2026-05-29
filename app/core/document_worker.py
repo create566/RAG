@@ -48,7 +48,7 @@ class DocumentWorker:
             },
             llm_service=self.llm_service,
         )
-        self.vector_store = create_vector_store({
+        self.vector_store = create_vector_store(config={
             "persist_directory": settings.chroma.persist_directory,
             "collection_name": settings.chroma.collection_name,
         })
@@ -167,6 +167,12 @@ class DocumentWorker:
                 logger.info(f"[Worker] 开始存储向量: chunks={len(chunk_ids)}, embedding_ok={embedding_ok}")
                 self.vector_store.add(valid_chunks, embeddings, metadatas, chunk_ids)
                 logger.info(f"[Worker] 向量存储完成: collection={self.vector_store.collection.count()}")
+
+            # 写入 ES 索引
+            self._index_to_es(doc_id, file_name, valid_chunks, metadatas)
+
+            # 写入 Neo4j 图谱
+            self._index_to_neo4j(doc_id, file_name, valid_chunks)
 
             status = "indexed" if embedding_ok else "keyword_only"
             logger.info(f"[Worker] 文档处理完成: doc_id={doc_id}, status={status}")
