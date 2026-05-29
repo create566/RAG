@@ -1,7 +1,16 @@
-# Super Agent Python Backend
+ 企业级 AI 智能体对话平台
 
-企业级AI智能体对话平台的Python实现，对标Java版Super Agent。
+一个基于 FastAPI 的 RAG 知识问答系统，支持：
 
+混合检索：向量检索 (Chroma) + BM25 关键词检索 (Elasticsearch) + RRF 融合
+文档图谱：Neo4j 构建文档章节关系网络
+切块策略：structural / recursive / semantic / llm 四种可选
+会话记忆：MySQL 持久化，摘要压缩策略
+Agent 执行：支持 ReAct 模式 + 工具调用 (Tavily 搜索)
+用户隔离：向量存储、ES 索引均按用户隔离
+技术栈：FastAPI + LangGraph + Chroma + Elasticsearch + Neo4j + MySQL + Redis
+
+基于 FastAPI 的企业级 RAG 知识问答平台，支持向量/关键词混合检索、Neo4j 图谱、LLM 切块策略和用户数据隔离
 ## 核心技术栈
 
 | 技术 | 说明 |
