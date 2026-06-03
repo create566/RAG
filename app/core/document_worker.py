@@ -37,7 +37,7 @@ class DocumentWorker:
         self.processor = DocumentProcessor()
         self.llm_service = create_llm_service(
             provider=settings.llm.provider,
-            config={"api_key": settings.llm.api_key, "model": settings.llm.model},
+            config={"api_key": settings.llm.api_key, "model": settings.llm.model, "embedding_model": settings.embedding.model},
         )
         self.splitter = TextSplitter(
             strategy=settings.document.default_strategy,

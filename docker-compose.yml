@@ -42,6 +42,7 @@ services:
 
   # Chroma - 向量数据库
   chroma:
+
     image: ghcr.io/chroma-core/chroma:0.5.0
     container_name: super-chroma
     ports:

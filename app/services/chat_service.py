@@ -36,10 +36,13 @@ class ChatService:
             vllm_cfg = yaml_config.get("llm", {}).get("vllm", {})
             llm_config["model"] = vllm_cfg.get("model", "Qwen/Qwen3-1.8B-Instruct")
             llm_config["base_url"] = vllm_cfg.get("base_url", "http://localhost:8010/v1")
+            # 传入 embedding 模型名给 VLLMService
+            llm_config["embedding_model"] = settings.embedding.model
         self.llm_service = create_llm_service(
             provider=settings.llm.provider,
             config=llm_config,
         )
+        logger.info(f"[CHAT] LLM服务初始化成功 | provider={settings.llm.provider}, model={settings.llm.model}")
 
         # Redis 缓存
         from app.core.redis_client import create_redis_cache
@@ -53,6 +56,7 @@ class ChatService:
                     "password": settings.redis.password or None,
                     "prefix": settings.redis.prefix,
                 })
+                logger.info(f"[REDIS] Redis连接成功 | host={settings.redis.host}:{settings.redis.port}")
             except Exception as e:
                 logger.warning(f"[Redis] Failed to connect: {e}")
 
@@ -92,12 +96,14 @@ class ChatService:
             "collection_name": settings.chroma.collection_name,
         }
         self.vector_store = create_vector_store(config=vector_cfg)
+        logger.info(f"[CHAT] 向量存储初始化成功 | collection={settings.chroma.collection_name}")
 
         # 关键词检索通道 (Elasticsearch)
         from elasticsearch import Elasticsearch
         from app.retrieval.pipeline import KeywordRetrievalChannel as ESKeywordRetrievalChannel
         es_hosts = [resolve_env(h) if isinstance(h, str) else h for h in settings.elasticsearch.hosts]
         self.es_client = Elasticsearch(hosts=es_hosts)
+        logger.info(f"[ELASTICSEARCH] Elasticsearch连接成功 | hosts={es_hosts}")
         self.keyword_channel = ESKeywordRetrievalChannel(
             elasticsearch_client=self.es_client,
             config={
@@ -148,6 +154,7 @@ class ChatService:
             llm_service=self.llm_service,
             config=retrieval_dict,
         )
+        logger.info(f"[CHAT] RAG检索引擎初始化成功")
 
         # 图查询引擎 (Neo4j)
         from app.core.graph_engine import create_graph_engine
@@ -164,7 +171,7 @@ class ChatService:
                         }
                     },
                 )
-                logger.info("图查询引擎初始化成功")
+                logger.info(f"[NEO4J] Neo4j连接成功 | uri={settings.neo4j.uri}")
             except Exception as e:
                 logger.warning(f"图查询引擎初始化失败: {e}")
 
@@ -191,6 +198,7 @@ class ChatService:
             document_service=self.document_service,
             config=retrieval_dict,
         )
+        logger.info(f"[CHAT] 聊天编排器初始化成功")
 
         # ReAct Agent - 时间工具 + MCP 工具
         from app.agent.react import ReActAgent, GetCurrentTimeTool
@@ -222,6 +230,7 @@ class ChatService:
             "session_model_call_limit": settings.agent.session_model_call_limit,
             "session_tool_call_limit": settings.agent.session_tool_call_limit,
         })
+        logger.info(f"[CHAT] ReAct Agent初始化成功 | tools_count={len(tools)}")
 
     # ── 公共逻辑 ───────────────────────────────────────────
 

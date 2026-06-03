@@ -16,6 +16,7 @@ class SiliconFlowRerankService:
         self.model = model
         self.endpoint = "https://api.siliconflow.cn/v1/rerank"
         self.min_score = min_score  # 最低相关分阈值，低于此分的结果会被过滤
+        logger.info(f"[RERANK] SiliconFlow rerank服务初始化成功 | model={model}, endpoint={self.endpoint}")
 
     async def rerank(self, query: str, results: List[Dict], top_k: int = 5) -> List[Dict]:
         """
@@ -110,14 +111,14 @@ class VLLMRerankService:
         self.model = model
         self.base_url = base_url
         self.min_score = min_score
+        logger.info(f"[RERANK] VLLM rerank服务初始化成功 | model={model}, base_url={base_url}")
 
     async def rerank(self, query: str, results: List[Dict], top_k: int = 5) -> List[Dict]:
         if not results:
             return []
 
         try:
-            from openai import OpenAI
-            client = OpenAI(api_key="vllm", base_url=self.base_url)
+            import httpx
 
             documents = []
             for r in results:
@@ -126,40 +127,37 @@ class VLLMRerankService:
                 else:
                     documents.append(r.get("content", ""))
 
-            def _call():
-                return client.moderations.create(
-                    input=documents
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/rerank",
+                    json={
+                        "model": self.model,
+                        "query": query,
+                        "documents": documents,
+                        "top_n": top_k
+                    }
                 )
 
-            # VLLM rerank 需要使用 /rerank 端点
-            response = client.post(
-                url=f"{self.base_url}/rerank",
-                json={
-                    "model": self.model,
-                    "query": query,
-                    "documents": documents,
-                    "top_n": top_k
-                }
-            )
+                if response.status_code == 200:
+                    data = response.json()
+                    rerank_results = data.get("results", [])
 
-            if response.status_code == 200:
-                data = response.json()
-                rerank_results = data.get("results", [])
-
-                reranked = []
-                for item in rerank_results:
-                    idx = item.get("index", 0)
-                    relevance_score = item.get("relevance_score", 0)
-                    if relevance_score < self.min_score:
-                        continue
-                    if idx < len(results):
-                        r = results[idx]
-                        if hasattr(r, 'content'):
-                            from dataclasses import asdict
-                            r = asdict(r)
-                        r["rerank_score"] = relevance_score
-                        reranked.append(r)
-                return reranked
+                    reranked = []
+                    for item in rerank_results:
+                        idx = item.get("index", 0)
+                        relevance_score = item.get("relevance_score", 0)
+                        if relevance_score < self.min_score:
+                            continue
+                        if idx < len(results):
+                            r = results[idx]
+                            if hasattr(r, 'content'):
+                                from dataclasses import asdict
+                                r = asdict(r)
+                            r["rerank_score"] = relevance_score
+                            reranked.append(r)
+                    return reranked
+                else:
+                    return results[:top_k]
         except Exception as e:
             logger.warning(f"[VLLM RERANK] 错误: {e}")
         return results[:top_k]

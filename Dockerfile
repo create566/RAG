@@ -8,6 +8,9 @@ WORKDIR /app
 # 复制依赖文件
 COPY requirements.txt .
 
+# 安装依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
 # 创建数据目录
 RUN mkdir -p ./data/chroma ./data/uploads
 

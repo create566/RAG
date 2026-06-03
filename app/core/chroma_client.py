@@ -5,6 +5,9 @@ Chroma 向量数据库客户端
 from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChromaVectorStore:
@@ -22,6 +25,7 @@ class ChromaVectorStore:
             self.collection_name = "super_agent_docs"
         self._client = None
         self._collection = None
+        logger.info(f"[CHROMA] 向量数据库初始化成功 | collection={self.collection_name}, user_id={user_id}, persist_dir={persist_directory}")
 
     @property
     def client(self):
@@ -91,11 +95,13 @@ class ChromaVectorStore:
 def create_vector_store(user_id: int = None, config: Dict = None) -> ChromaVectorStore:
     """Factory method to create vector store (user isolated)"""
     config = config or {}
-    return ChromaVectorStore(
+    store = ChromaVectorStore(
         user_id=user_id,
         persist_directory=config.get("persist_directory", "./data/chroma"),
         collection_name=config.get("collection_name")
     )
+    logger.info(f"[CHROMA] 向量存储创建成功 | collection={store.collection_name}")
+    return store
 
 
 class ConversationMemoryStore:

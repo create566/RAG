@@ -25,10 +25,10 @@ document:
   max_child_chunks: 500
 embedding:
   vllm:
-    model: Alibaba-NLP/gte-multilingual-base
+    model: /models/BAAI/bge-small-zh-v1___5
     base_url: http://localhost:8011/v1
-    dashscope:
-      model: text-embedding-v3
+  dashscope:
+    model: text-embedding-v1
   provider: dashscope
 
 graph_db:
@@ -48,13 +48,13 @@ llm:
   dashscope:
     api_key: ${DASHSCOPE_API_KEY}
     max_tokens: 4096
-    model: qwen-turbo
+    model: qwen3.7-plus
     temperature: 0.3
   ollama:
     model: gemma4:e4b
     base_url: http://localhost:11434
   vllm:
-    model: Qwen/Qwen2.5-1.5B-Instruct
+    model: /models/Qwen/Qwen2-0___5B-Instruct
     base_url: http://localhost:8010/v1
     temperature: 0.3
     max_tokens: 2048
@@ -92,9 +92,12 @@ object_storage:
 
 rerank:
   provider: siliconflow
+  vllm:
+    model: //models/BAAI/bge-reranker-base
+    base_url: http://localhost:8012/v1
   siliconflow:
     api_key: ${SILICONFLOW_API_KEY}
-    model: BAAI/bge-reranker-v2-m3
+    model: gte-rerank-v2
 
 
 retrieval:

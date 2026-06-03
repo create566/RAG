@@ -28,6 +28,7 @@ class DocumentService:
             config={
                 "api_key": settings.llm.api_key,
                 "model": settings.llm.model,
+                "embedding_model": settings.embedding.model,
             },
         )
         self.splitter = TextSplitter(
@@ -113,8 +114,10 @@ class DocumentService:
                     file_size=len(content),
                     status="parse_failed",
                 )
+            logger.info(f"[DOC] 文档解析成功 | doc_id={doc_id}, 文件={file_name}, 长度={len(text)}")
 
             chunks = await self.splitter.split(text)
+            logger.info(f"[DOC] 文档切割成功 | doc_id={doc_id}, chunks={len(chunks)}")
 
             chunk_ids = []
             embeddings = []
@@ -156,6 +159,7 @@ class DocumentService:
                     metadatas=metadatas,
                     ids=chunk_ids,
                 )
+                logger.info(f"[DOC] 文档已索引到向量库 | doc_id={doc_id}, chunks={len(chunk_ids)}")
 
             self._index_to_es(doc_id, file_name, valid_chunks, metadatas)
             self._index_to_neo4j(doc_id, file_name, valid_chunks)

@@ -63,6 +63,7 @@ class VectorRetrievalChannel:
         self.embedding_service = embedding_service
         self.vector_store = vector_store
         self.config = config
+        logger.info(f"[RETRIEVAL] 向量检索通道初始化成功")
 
     async def retrieve(self, query: str, document_ids: List[int] = None, top_k: int = 10, user_id: int = None) -> List[RetrievalResult]:
         """执行向量检索"""
@@ -159,6 +160,7 @@ class KeywordRetrievalChannel:
     def __init__(self, elasticsearch_client, config: Dict):
         self.es_client = elasticsearch_client
         self.config = config
+        logger.info(f"[RETRIEVAL] 关键词检索通道初始化成功 | index={config.get('index')}")
 
     async def retrieve(self, query: str, document_ids: List[int] = None, top_k: int = 10, user_id: int = None) -> List[RetrievalResult]:
         """执行关键词检索"""
@@ -230,6 +232,7 @@ class RRFer:
 
     def __init__(self, k: int = 60):
         self.k = k
+        logger.info(f"[RETRIEVAL] RRF融合器初始化成功 | k={k}")
 
     def fuse(self, vector_results: List[RetrievalResult], keyword_results: List[RetrievalResult]) -> List[RetrievalResult]:
         """执行RRF融合"""
@@ -268,6 +271,7 @@ class ParentChildAggregator:
     def __init__(self, vector_store, config: Dict):
         self.vector_store = vector_store
         self.config = config
+        logger.info(f"[RETRIEVAL] ParentChild聚合器初始化成功 | max_parent_chunks={config.get('max_parent_chunks', 5)}")
 
     def aggregate(self, child_results: List[RetrievalResult], max_parent_chunks: int = 5) -> List[RetrievalResult]:
         """将Child块聚合到Parent块"""
@@ -306,6 +310,7 @@ class EvidenceBudgetController:
         self.budget_per_child = budget_per_child
         self.budget_total = budget_total
         self.semantic_compressor = SemanticCompressor(llm_service) if enable_semantic_compress and llm_service else None
+        logger.info(f"[RETRIEVAL] 证据预算控制器初始化成功 | budget_total={budget_total}, semantic_compress={enable_semantic_compress}")
 
     def control(self, results: List[RetrievalResult]) -> Tuple[List[RetrievalResult], bool]:
         """控制证据预算（同步版本，使用句子边界截断）"""

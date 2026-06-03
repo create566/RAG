@@ -166,6 +166,7 @@ class DashScopeLLMService(BaseLLMService):
                     if embeds and embeds[0].get("embedding"):
                         self._embedding_failure_count = 0  # 成功后重置计数器
                         self.embedding_available = True
+                        logger.debug(f"[EMBED] 向量生成成功 | dim={len(embeds[0]['embedding'])}")
                         return embeds[0]["embedding"]
                     return []
                 else:
@@ -369,10 +370,12 @@ class VLLMService(BaseLLMService):
             # embedding 使用单独的端口 8011
             embed_base_url = self.base_url.replace("8010", "8011")
             client = OpenAI(api_key="vllm", base_url=embed_base_url)
+            # 从 config 读取 embedding 模型名，或 fallback 到 settings
+            embed_model = self.config.get("embedding_model", "Alibaba-NLP/gte-multilingual-base")
 
             def _call():
                 return client.embeddings.create(
-                    model="Alibaba-NLP/gte-multilingual-base",
+                    model=embed_model,
                     input=text
                 )
 
@@ -495,6 +498,7 @@ def create_llm_service(provider: str = "dashscope", config: Dict = None) -> Base
         return VLLMService(
             model=config.get("model", "Qwen/Qwen3-1.8B-Instruct"),
             base_url=config.get("base_url", "http://localhost:8010/v1"),
+            config=config,
         )
     else:
         raise ValueError(f"不支持的LLM provider: {provider}")

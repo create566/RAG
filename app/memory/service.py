@@ -8,6 +8,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 import json
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class MemoryStrategy(ABC):
     """记忆策略基类"""
@@ -265,6 +269,7 @@ class MySQLMemoryStrategy(MemoryStrategy):
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """)
             conn.commit()
+            logger.info(f"[MYSQL] MySQL连接成功 | host={self.host}:{self.port}, database={self._connection_params.get('database', 'N/A')}")
         finally:
             conn.close()
 
