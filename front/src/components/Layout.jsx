@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { MessageSquare, FileText, Network, Menu, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { apiClient } from '../api/client'
 import './Layout.css'
@@ -24,7 +24,7 @@ function Layout() {
   const userId = user?.user_id || parseInt(localStorage.getItem('user_id'))
   const activeConvId = new URLSearchParams(location.search).get('conv_id')
 
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     if (!userId) return
     setLoadingConv(true)
     try {
@@ -33,15 +33,15 @@ function Layout() {
       if (data.success) setConversations(data.date_groups || [])
     } catch (e) { console.error(e) }
     finally { setLoadingConv(false) }
-  }
+  }, [userId])
 
-  useEffect(() => { loadConversations() }, [userId])
+  useEffect(() => { loadConversations() }, [loadConversations])
 
   // 每 30 秒刷新
   useEffect(() => {
     const interval = setInterval(loadConversations, 30000)
     return () => clearInterval(interval)
-  }, [userId])
+  }, [loadConversations])
 
   const handleNewChat = () => {
     navigate('/chat?new=1')
