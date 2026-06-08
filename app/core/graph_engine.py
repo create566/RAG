@@ -235,8 +235,14 @@ def create_graph_engine(provider: str = "neo4j", config: Dict = None) -> BaseGra
             password=settings.neo4j.password
         )
 
-        if not client.health_check():
-            raise RuntimeError("Neo4j 连接失败，请检查配置")
+        import concurrent.futures
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(client.health_check)
+                if not future.result(timeout=8):
+                    raise RuntimeError("Neo4j 连接失败")
+        except concurrent.futures.TimeoutError:
+            raise RuntimeError("Neo4j 连接超时，请检查配置")
 
         return Neo4jGraphQueryEngine(client)
 
