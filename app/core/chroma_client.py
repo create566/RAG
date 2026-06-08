@@ -2,6 +2,10 @@
 Chroma 向量数据库客户端
 用于文档的向量存储和检索
 """
+import os
+os.environ.setdefault("CHROMA_TELEMETRY_IMPL", "none")
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+
 from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings

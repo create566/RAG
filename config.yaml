@@ -27,9 +27,10 @@ embedding:
   vllm:
     model: /models/BAAI/bge-small-zh-v1___5
     base_url: http://localhost:8011/v1
+    dimension: 512
   dashscope:
     model: text-embedding-v1
-  provider: dashscope
+  provider: vllm
 
 graph_db:
   neo4j:
@@ -58,7 +59,7 @@ llm:
     base_url: http://localhost:8010/v1
     temperature: 0.3
     max_tokens: 2048
-  provider: dashscope
+  provider: vllm
 
 memory:
   recent_max_chars: 2200
@@ -90,8 +91,9 @@ object_storage:
     secure: false
   provider: minio
 
+
 rerank:
-  provider: siliconflow
+  provider: vllm
   vllm:
     model: //models/BAAI/bge-reranker-base
     base_url: http://localhost:8012/v1

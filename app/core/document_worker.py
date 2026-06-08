@@ -151,7 +151,7 @@ class DocumentWorker:
                 if not embedding or len(embedding) == 0:
                     logger.warning(f"[Worker] Embedding 返回空，chunk={i}")
                     embedding_ok = False
-                    embedding = [0.0] * 1536
+                    embedding = [0.0] * get_settings().embedding.dimension
                 else:
                     logger.info(f"[Worker] Embedding 成功 chunk={i}, dim={len(embedding)}")
                 embeddings.append(embedding)
