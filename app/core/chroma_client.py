@@ -20,7 +20,10 @@ logger = get_logger(__name__)
 
 
 class ChromaVectorStore:
-    """Chroma 向量存储客户端"""
+    """Chroma 向量存储客户端 — 延迟初始化，共享底层 ChromaDB 客户端"""
+
+    # 全局共享的 PersistentClient（同目录只需一个，避免 SQLite 锁冲突）
+    _shared_clients: dict = {}
 
     def __init__(self, user_id: int = None, persist_directory: str = "./data/chroma", collection_name: str = None):
         self.user_id = user_id
@@ -34,23 +37,26 @@ class ChromaVectorStore:
             self.collection_name = "super_agent_docs"
         self._client = None
         self._collection = None
-        logger.info(f"[CHROMA] 向量数据库初始化成功 | collection={self.collection_name}, user_id={user_id}, persist_dir={persist_directory}")
+        self._initialized = False
 
     @property
     def client(self):
-        """延迟初始化客户端"""
+        """延迟初始化客户端（全局共享 PersistentClient）"""
         if self._client is None:
-            self._client = chromadb.PersistentClient(
-                path=self.persist_directory,
-                settings=Settings(
-                    anonymized_telemetry=False
+            key = self.persist_directory
+            if key not in ChromaVectorStore._shared_clients:
+                ChromaVectorStore._shared_clients[key] = chromadb.PersistentClient(
+                    path=self.persist_directory,
+                    settings=Settings(
+                        anonymized_telemetry=False
+                    )
                 )
-            )
+            self._client = ChromaVectorStore._shared_clients[key]
         return self._client
 
     @property
     def collection(self):
-        """获取集合"""
+        """获取集合（首次访问时真正初始化 ChromaDB）"""
         if self._collection is None:
             try:
                 self._collection = self.client.get_collection(name=self.collection_name)
@@ -59,6 +65,9 @@ class ChromaVectorStore:
                     name=self.collection_name,
                     metadata={"description": "Super Agent Document Collection"}
                 )
+            if not self._initialized:
+                self._initialized = True
+                logger.info(f"[CHROMA] 向量数据库初始化成功 | collection={self.collection_name}, user_id={self.user_id}, persist_dir={self.persist_directory}")
         return self._collection
 
     def add(self, documents: List[str], embeddings: List[List[float]], metadatas: List[Dict], ids: List[str]):
@@ -101,16 +110,28 @@ class ChromaVectorStore:
         return self.collection.count()
 
 
+# 向量存储实例缓存：key=(persist_dir, collection_name)，避免重复创建
+_vector_store_cache: dict = {}
+
+
 def create_vector_store(user_id: int = None, config: Dict = None) -> ChromaVectorStore:
-    """Factory method to create vector store (user isolated)"""
+    """Factory method to create vector store (user isolated) — 带缓存"""
     config = config or {}
-    store = ChromaVectorStore(
-        user_id=user_id,
-        persist_directory=config.get("persist_directory", "./data/chroma"),
-        collection_name=config.get("collection_name")
-    )
-    logger.info(f"[CHROMA] 向量存储创建成功 | collection={store.collection_name}")
-    return store
+    persist_dir = config.get("persist_directory", "./data/chroma")
+    coll_name = config.get("collection_name")
+    if not coll_name:
+        coll_name = f"user_{user_id}_docs" if user_id else "super_agent_docs"
+
+    cache_key = (persist_dir, coll_name)
+    if cache_key not in _vector_store_cache:
+        store = ChromaVectorStore(
+            user_id=user_id,
+            persist_directory=persist_dir,
+            collection_name=coll_name,
+        )
+        _vector_store_cache[cache_key] = store
+        logger.info(f"[CHROMA] 向量存储创建成功 | collection={store.collection_name}")
+    return _vector_store_cache[cache_key]
 
 
 class ConversationMemoryStore:
@@ -126,10 +147,13 @@ class ConversationMemoryStore:
     @property
     def client(self):
         if self._client is None:
-            self._client = chromadb.PersistentClient(
-                path=self.persist_directory,
-                settings=Settings(anonymized_telemetry=False)
-            )
+            key = self.persist_directory
+            if key not in ChromaVectorStore._shared_clients:
+                ChromaVectorStore._shared_clients[key] = chromadb.PersistentClient(
+                    path=self.persist_directory,
+                    settings=Settings(anonymized_telemetry=False)
+                )
+            self._client = ChromaVectorStore._shared_clients[key]
         return self._client
 
     @property

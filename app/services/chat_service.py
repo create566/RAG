@@ -26,6 +26,10 @@ class ChatService:
             "max_tokens": settings.llm.max_tokens,
             "temperature": settings.llm.temperature,
             "base_url": settings.llm.base_url,
+            # 独立的 embedding 配置（embedding provider 可能与 LLM provider 不同）
+            "embed_model": settings.embedding.model,
+            "embed_base_url": settings.embedding.base_url,
+            "embed_api_key": settings.embedding.api_key,
         }
         # 如果是 ollama provider，使用 ollama 配置覆盖
         if settings.llm.provider == "ollama":
@@ -38,6 +42,12 @@ class ChatService:
             llm_config["base_url"] = vllm_cfg.get("base_url", "http://localhost:8010/v1")
             # 传入 embedding 模型名给 VLLMService
             llm_config["embedding_model"] = settings.embedding.model
+        # 如果是 deepseek provider，使用 deepseek 配置
+        elif settings.llm.provider == "deepseek":
+            deepseek_cfg = yaml_config.get("llm", {}).get("deepseek", {})
+            llm_config["model"] = deepseek_cfg.get("model", "deepseek-v4-pro")
+            llm_config["base_url"] = deepseek_cfg.get("base_url", "https://api.deepseek.com")
+            llm_config["reasoning_effort"] = deepseek_cfg.get("reasoning_effort", "high")
         self.llm_service = create_llm_service(
             provider=settings.llm.provider,
             config=llm_config,

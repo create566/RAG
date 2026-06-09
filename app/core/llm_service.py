@@ -32,8 +32,10 @@ class DashScopeLLMService(BaseLLMService):
         self.base_url = self.config.get("base_url", "https://dashscope.aliyuncs.com/api/v1")
         self._embedding_failure_count = 0
         self.embedding_available = True
-        # 从环境变量读取 embedding 模型
-        self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-v1")
+        # 从 config 读取 embedding 模型，fallback 到环境变量
+        self.embedding_model = config.get("embed_model") if config else None
+        if not self.embedding_model:
+            self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-v1")
         logger.info(f"Using embedding model: {self.embedding_model}")
 
     async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
@@ -189,16 +191,21 @@ class DashScopeLLMService(BaseLLMService):
 
 
 class OpenAILLMService(BaseLLMService):
-    """OpenAI LLM服务"""
+    """OpenAI LLM服务 — 同时兼容 DeepSeek API"""
 
     def __init__(self, api_key: str, model: str = "gpt-4-turbo", base_url: str = None, config: Dict = None):
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.model = model
         self.base_url = base_url or "https://api.openai.com/v1"
         self.config = config or {}
+        self.reasoning_effort = config.get("reasoning_effort") if config else None
+        # 支持独立的 embedding 配置（LLM 和 Embedding 可能使用不同的 provider）
+        self.embed_base_url = config.get("embed_base_url") or self.base_url
+        self.embed_model = config.get("embed_model") or "text-embedding-ada-002"
+        self.embed_api_key = config.get("embed_api_key") or self.api_key or "vllm"
 
     async def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
-        """调用OpenAI API"""
+        """调用 OpenAI 兼容 API（含 DeepSeek）"""
         try:
             from openai import OpenAI
 
@@ -210,12 +217,19 @@ class OpenAILLMService(BaseLLMService):
             messages.append({"role": "user", "content": prompt})
 
             def _call():
-                return client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=kwargs.get("max_tokens", 4096),
-                    temperature=kwargs.get("temperature", 0.7)
-                )
+                create_kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_tokens": kwargs.get("max_tokens", 4096),
+                    "temperature": kwargs.get("temperature", 0.7),
+                }
+                reasoning_effort = kwargs.get("reasoning_effort") or self.reasoning_effort
+                if reasoning_effort:
+                    create_kwargs["reasoning_effort"] = reasoning_effort
+                extra_body = kwargs.get("extra_body")
+                if extra_body:
+                    create_kwargs["extra_body"] = extra_body
+                return client.chat.completions.create(**create_kwargs)
 
             response = await asyncio.to_thread(_call)
 
@@ -231,16 +245,69 @@ class OpenAILLMService(BaseLLMService):
             else:
                 return f"调用失败: {error_str}"
 
-    async def embed(self, text: str) -> List[float]:
-        """获取文本嵌入"""
+    async def chat_stream(self, prompt: str, system_prompt: str = None, **kwargs) -> AsyncIterator[str]:
+        """流式调用 OpenAI 兼容 API（含 DeepSeek）"""
         try:
             from openai import OpenAI
 
             client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            queue: asyncio.Queue = asyncio.Queue()
+            loop = asyncio.get_event_loop()
+
+            def _stream():
+                try:
+                    create_kwargs = {
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": True,
+                        "max_tokens": kwargs.get("max_tokens", 4096),
+                        "temperature": kwargs.get("temperature", 0.7),
+                    }
+                    reasoning_effort = kwargs.get("reasoning_effort") or self.reasoning_effort
+                    if reasoning_effort:
+                        create_kwargs["reasoning_effort"] = reasoning_effort
+                    extra_body = kwargs.get("extra_body")
+                    if extra_body:
+                        create_kwargs["extra_body"] = extra_body
+                    response = client.chat.completions.create(**create_kwargs)
+                    for chunk in response:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            text = chunk.choices[0].delta.content
+                            loop.call_soon_threadsafe(queue.put_nowait, ("token", text))
+                    loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+                except Exception as e:
+                    loop.call_soon_threadsafe(queue.put_nowait, ("error", str(e)))
+
+            loop.run_in_executor(None, _stream)
+
+            while True:
+                event_type, data = await queue.get()
+                if event_type == "done":
+                    break
+                elif event_type == "error":
+                    yield data
+                    break
+                else:
+                    yield data
+        except Exception as e:
+            yield f"调用失败: {str(e)}"
+
+    async def embed(self, text: str) -> List[float]:
+        """获取文本嵌入 — 支持独立的 embedding provider 配置"""
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=self.embed_api_key, base_url=self.embed_base_url)
+
             def _call():
                 return client.embeddings.create(
-                    model="text-embedding-ada-002",
+                    model=self.embed_model,
                     input=text
                 )
 
@@ -499,6 +566,13 @@ def create_llm_service(provider: str = "dashscope", config: Dict = None) -> Base
             model=config.get("model", "Qwen/Qwen3-1.8B-Instruct"),
             base_url=config.get("base_url", "http://localhost:8010/v1"),
             config=config,
+        )
+    elif provider == "deepseek":
+        return OpenAILLMService(
+            api_key=config.get("api_key", ""),
+            model=config.get("model", "deepseek-v4-pro"),
+            base_url=config.get("base_url", "https://api.deepseek.com"),
+            config=config
         )
     else:
         raise ValueError(f"不支持的LLM provider: {provider}")

@@ -228,6 +228,7 @@ class Settings(BaseSettings):
             model=llm_cfg.get("model", "qwen-max"),
             max_tokens=llm_cfg.get("max_tokens", 4096),
             temperature=llm_cfg.get("temperature", 0.7),
+            base_url=llm_cfg.get("base_url", "https://dashscope.aliyuncs.com/api/v1"),
         )
 
         # 解析 Ollama

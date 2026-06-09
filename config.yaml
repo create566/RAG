@@ -59,7 +59,14 @@ llm:
     base_url: http://localhost:8010/v1
     temperature: 0.3
     max_tokens: 2048
-  provider: vllm
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY}
+    model: deepseek-v4-pro
+    base_url: https://api.deepseek.com
+    max_tokens: 8192
+    temperature: 0.3
+    reasoning_effort: high
+  provider: deepseek
 
 memory:
   recent_max_chars: 2200
